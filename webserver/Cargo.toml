@@ -19,7 +19,6 @@ production = []
 [dependencies]
 anyhow.workspace = true
 axum-macros.workspace = true
-axum-trace-id.workspace = true
 axum.workspace = true 
 bincode.workspace = true
 clap.workspace = true 
@@ -40,6 +39,7 @@ tracing.workspace = true
 validator.workspace = true
 xorf.workspace = true
 tryhard.workspace = true
+axum-prometheus.workspace = true
 
 [build-dependencies]
 vergen = { workspace = true, features = ["build", "git", "gitcl"] }

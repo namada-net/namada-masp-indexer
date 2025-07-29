@@ -1,7 +1,6 @@
 use axum::Json;
 use axum::extract::State;
 use axum_macros::debug_handler;
-use axum_trace_id::TraceId;
 use shared::error::InspectWrap;
 
 use crate::error::namada_state::NamadaStateError;
@@ -10,7 +9,6 @@ use crate::state::common::CommonState;
 
 #[debug_handler]
 pub async fn get_latest_height(
-    _trace_id: TraceId<String>,
     State(state): State<CommonState>,
 ) -> Result<Json<LatestHeightResponse>, NamadaStateError> {
     let maybe_height = state
@@ -28,7 +26,6 @@ pub async fn get_latest_height(
 
 #[debug_handler]
 pub async fn get_block_index(
-    _trace_id: TraceId<String>,
     State(state): State<CommonState>,
 ) -> Result<Json<BlockIndexResponse>, NamadaStateError> {
     let maybe_block_index = state

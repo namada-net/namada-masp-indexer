@@ -1,7 +1,6 @@
 use axum::Json;
 use axum::extract::{Query, State};
 use axum_macros::debug_handler;
-use axum_trace_id::TraceId;
 use shared::error::InspectWrap;
 
 use crate::dto::txs::TxQueryParams;
@@ -11,7 +10,6 @@ use crate::state::common::CommonState;
 
 #[debug_handler]
 pub async fn get_tx(
-    _trace_id: TraceId<String>,
     State(state): State<CommonState>,
     Query(query_params): Query<TxQueryParams>,
 ) -> Result<Json<TxResponse>, TxError> {

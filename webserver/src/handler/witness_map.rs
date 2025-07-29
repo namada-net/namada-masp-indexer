@@ -1,7 +1,6 @@
 use axum::Json;
 use axum::extract::{Query, State};
 use axum_macros::debug_handler;
-use axum_trace_id::TraceId;
 use shared::error::InspectWrap;
 use shared::height::BlockHeight;
 
@@ -12,7 +11,6 @@ use crate::state::common::CommonState;
 
 #[debug_handler]
 pub async fn get_witness_map(
-    _trace_id: TraceId<String>,
     State(state): State<CommonState>,
     Query(query_params): Query<WitnessMapQueryParams>,
 ) -> Result<Json<WitnessMapResponse>, WitnessMapError> {
