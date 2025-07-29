@@ -2,13 +2,12 @@ use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::Context;
 use axum::error_handling::HandleErrorLayer;
 use axum::http::{HeaderValue, StatusCode};
 use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::{BoxError, Json, Router};
-use axum_trace_id::SetTraceIdLayer;
+use axum_prometheus::PrometheusMetricLayer;
 use lazy_static::lazy_static;
 use serde_json::json;
 use tower::ServiceBuilder;
@@ -34,6 +33,8 @@ impl ApplicationServer {
         let rps = config.rps.unwrap_or_else(|| *REQ_PER_SEC);
         let db_url = config.database_url.clone();
 
+        let (prometheus_layer, metric_handler) = PrometheusMetricLayer::pair();
+
         let app_state = AppState::new(db_url).await?;
 
         let routes = {
@@ -58,6 +59,10 @@ impl ApplicationServer {
                     "/block-index",
                     get(handler::namada_state::get_block_index),
                 )
+                .route(
+                    "/metrics",
+                    get(|| async move { metric_handler.render() }),
+                )
                 .with_state(common_state)
         };
 
@@ -72,16 +77,15 @@ impl ApplicationServer {
                 "/health",
                 get(|| async { json!({"commit": env!("VERGEN_GIT_SHA").to_string(), "version": env!("CARGO_PKG_VERSION") }).to_string() }),
             ))
-            .with_state(app_state)
             .layer(
                 ServiceBuilder::new()
                     .layer(TraceLayer::new_for_http())
+                    .layer(prometheus_layer)
                     .layer(HandleErrorLayer::new(Self::handle_timeout_error))
                     .timeout(Duration::from_secs(*HTTP_TIMEOUT))
                     .layer(cors)
                     .layer(BufferLayer::new(4096))
                     .layer(RateLimitLayer::new(rps, Duration::from_secs(1)))
-                    .layer(SetTraceIdLayer::<String>::new()),
             );
 
         let router = router.fallback(Self::handle_404);
@@ -91,11 +95,11 @@ impl ApplicationServer {
 
         tracing::info!("🚀 Server has launched on https://{addr}");
 
-        axum::Server::bind(&addr)
-            .serve(router.into_make_service())
+        let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
+        axum::serve(listener, router.into_make_service())
             .with_graceful_shutdown(Self::shutdown_signal())
             .await
-            .context("The server shutdown unexpectedly")?;
+            .unwrap_or_else(|e| panic!("Server error: {}", e));
 
         Ok(())
     }

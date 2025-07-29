@@ -1,7 +1,6 @@
 use axum::Json;
 use axum::extract::{Query, State};
 use axum_macros::debug_handler;
-use axum_trace_id::TraceId;
 use shared::commitment_tree::empty as empty_tree;
 use shared::error::InspectWrap;
 
@@ -12,7 +11,6 @@ use crate::state::common::CommonState;
 
 #[debug_handler]
 pub async fn get_commitment_tree(
-    _trace_id: TraceId<String>,
     State(state): State<CommonState>,
     Query(query_params): Query<TreeQueryParams>,
 ) -> Result<Json<TreeResponse>, TreeError> {
