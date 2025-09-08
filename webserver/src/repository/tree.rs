@@ -3,7 +3,7 @@ use diesel::{
     ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl,
     SelectableHelper,
 };
-use orm::schema::commitment_tree;
+use orm::schema::{commitment_tree, notes_index};
 use orm::tree::TreeDb;
 use shared::error::ContextDbInteractError;
 
@@ -38,21 +38,42 @@ impl TreeRepositoryTrait for TreeRepository {
         )?;
 
         conn.interact(move |conn| {
-            commitment_tree::table
-                .order(
-                    abs(commitment_tree::dsl::block_height - block_height)
-                        .asc(),
-                )
-                .filter(commitment_tree::dsl::block_height.le(block_height))
-                .select(TreeDb::as_select())
-                .first(conn)
-                .optional()
-                .with_context(|| {
-                    format!(
-                        "Failed to look-up commitment tree in the database \
-                         closest to the provided height {block_height}"
+            conn.build_transaction().read_only().run(|conn| {
+                let Some(closest_height) = notes_index::table
+                    .order(
+                        abs(notes_index::dsl::block_height - block_height)
+                            .asc(),
                     )
-                })
+                    .filter(notes_index::dsl::block_height.le(block_height))
+                    .select(notes_index::dsl::block_height)
+                    .first::<i32>(conn)
+                    .optional()
+                    .with_context(|| {
+                        format!(
+                            "Failed to fetch height from the db closest to \
+                             the provided height {block_height}"
+                        )
+                    })?
+                else {
+                    return anyhow::Ok(None);
+                };
+
+                let tree = commitment_tree::table
+                    .filter(
+                        commitment_tree::dsl::block_height.eq(closest_height),
+                    )
+                    .select(TreeDb::as_select())
+                    .first(conn)
+                    .with_context(|| {
+                        format!(
+                            "Failed to fetch commitment tree from the db at \
+                             height {closest_height} (the closest to the \
+                             provided height {block_height})"
+                        )
+                    })?;
+
+                anyhow::Ok(Some(tree))
+            })
         })
         .await
         .context_db_interact_error()?
