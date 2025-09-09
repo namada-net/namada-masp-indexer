@@ -8,7 +8,6 @@ use orm::tree::TreeDb;
 use shared::error::ContextDbInteractError;
 
 use crate::appstate::AppState;
-use crate::utils::sql::abs;
 
 #[derive(Clone)]
 pub struct TreeRepository {
@@ -40,10 +39,7 @@ impl TreeRepositoryTrait for TreeRepository {
         conn.interact(move |conn| {
             conn.build_transaction().read_only().run(|conn| {
                 let Some(closest_height) = notes_index::table
-                    .order(
-                        abs(notes_index::dsl::block_height - block_height)
-                            .asc(),
-                    )
+                    .order(notes_index::dsl::block_height.desc())
                     .filter(notes_index::dsl::block_height.le(block_height))
                     .select(notes_index::dsl::block_height)
                     .first::<i32>(conn)
