@@ -19,6 +19,7 @@ jobs:
     env:
       GIT_LFS_SKIP_SMUDGE: 1
       REGISTRY_URL: ghcr.io
+      REPOSITORY: ${{ github.repository }}
       
     strategy:
       fail-fast: true
