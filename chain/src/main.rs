@@ -41,6 +41,8 @@ const VERSION_STRING: &str = env!("VERGEN_GIT_SHA");
 const DEFAULT_INTERVAL: u64 = 5;
 const DEFAULT_MAX_CONCURRENT_FETCHES: usize = 100;
 
+const BLOCK_BUFFER_SIZE: usize = 32;
+
 #[tokio::main]
 async fn main() -> Result<(), MainError> {
     let AppConfig {
@@ -85,47 +87,29 @@ async fn main() -> Result<(), MainError> {
 
     let mut unprocessed_blocks = UnprocessedBlocks::new(last_block_height);
 
-    while let Some(block_data) =
-        get_new_block_from_fetcher(&mut fetched_blocks).await
-    {
-        let received_block_height = block_data.header.height;
-
-        // Sort the fetched block
-        let Some(block_data) = unprocessed_blocks.next_to_process(block_data)
-        else {
-            tracing::info!(%received_block_height, "Queueing block to be processed");
-            continue;
-        };
-
-        // Check if we can skip committing this block for now.
-        // This is because the block is empty. We can make a
-        // single remote procedure call to Postgres, when we
-        // exit.
-        if unprocessed_blocks.pre_commit_check_if_skip(&block_data) {
-            tracing::info!(block_height = %block_data.header.height, "Skipping commit of empty block");
-            continue;
-        }
-
-        tracing::info!(block_height = %block_data.header.height, "Dequeued block to be processed");
-
-        // Build and commit MASP data at the block height
-        if let ControlFlow::Break(()) =
-            retry::every(retry_interval, async || {
-                build_and_commit_masp_data_at_height(
-                    block_data.clone(),
-                    client.as_ref(),
-                    &mut witness_map,
-                    &mut commitment_tree,
-                    &mut tx_notes_index,
-                    &mut shielded_txs,
-                    &app_state,
-                    number_of_witness_map_roots_to_check,
-                )
-                .await
-            })
-            .await
+    'outer_loop: while fetched_blocks.get_new_blocks_from_fetcher().await {
+        for block_data in
+            fetched_blocks.order_blocks_to_process(&mut unprocessed_blocks)
         {
-            break;
+            // Build and commit MASP data at the block height
+            if let ControlFlow::Break(()) =
+                retry::every(retry_interval, async || {
+                    build_and_commit_masp_data_at_height(
+                        block_data.clone(),
+                        client.as_ref(),
+                        &mut witness_map,
+                        &mut commitment_tree,
+                        &mut tx_notes_index,
+                        &mut shielded_txs,
+                        &app_state,
+                        number_of_witness_map_roots_to_check,
+                    )
+                    .await
+                })
+                .await
+            {
+                break 'outer_loop;
+            }
         }
     }
 
@@ -158,7 +142,7 @@ fn fetch_blocks_and_get_handle(
     max_concurrent_fetches: usize,
     retry_interval: Duration,
     client: HttpClient,
-) -> mpsc::UnboundedReceiver<Block> {
+) -> FetchedBlocks {
     let (tx, rx) = mpsc::unbounded_channel();
 
     tokio::spawn(async move {
@@ -229,7 +213,7 @@ fn fetch_blocks_and_get_handle(
         }
     });
 
-    rx
+    FetchedBlocks::new(rx)
 }
 
 fn spawn_exit_handler() {
@@ -455,23 +439,74 @@ async fn validate_masp_state(
     Ok(())
 }
 
-async fn get_new_block_from_fetcher(
-    blocks: &mut mpsc::UnboundedReceiver<Block>,
-) -> Option<Block> {
-    poll_fn(|cx| {
-        if exit_handle::must_exit() {
-            return Poll::Ready(None);
+struct FetchedBlocks {
+    fetched_blocks: mpsc::UnboundedReceiver<Block>,
+    scratch_buffer: Vec<Block>,
+}
+
+impl FetchedBlocks {
+    fn new(fetched_blocks: mpsc::UnboundedReceiver<Block>) -> Self {
+        Self {
+            fetched_blocks,
+            scratch_buffer: Vec::with_capacity(BLOCK_BUFFER_SIZE),
+        }
+    }
+
+    async fn get_new_blocks_from_fetcher(&mut self) -> bool {
+        poll_fn(|cx| {
+            if exit_handle::must_exit() {
+                return Poll::Ready(false);
+            }
+
+            match self.fetched_blocks.poll_recv_many(
+                cx,
+                &mut self.scratch_buffer,
+                BLOCK_BUFFER_SIZE,
+            ) {
+                Poll::Ready(0) if exit_handle::must_exit() => {
+                    Poll::Ready(false)
+                }
+                Poll::Ready(0) => {
+                    panic!(
+                        "The block fetching task has unexpectedly terminated"
+                    )
+                }
+                Poll::Ready(_) => Poll::Ready(true),
+                Poll::Pending => Poll::Pending,
+            }
+        })
+        .await
+    }
+
+    fn order_blocks_to_process<'queue>(
+        &'queue mut self,
+        unprocessed_blocks: &'queue mut UnprocessedBlocks,
+    ) -> impl Iterator<Item = Block> + 'queue {
+        for block_data in self.scratch_buffer.drain(..) {
+            tracing::info!(received_block_height = %block_data.header.height, "Queueing block to be processed");
+            unprocessed_blocks.enqueue_block(block_data);
         }
 
-        match blocks.poll_recv(cx) {
-            poll @ Poll::Ready(None) if exit_handle::must_exit() => poll,
-            Poll::Ready(None) => {
-                panic!("The block fetching task has unexpectedly terminated")
+        std::iter::from_fn(|| {
+            while let Some(block_data) = unprocessed_blocks.dequeue_next_block()
+            {
+                // Check if we can skip committing this block for now.
+                // This is because the block is empty. We can make a
+                // single remote procedure call to Postgres, when we
+                // exit.
+                if unprocessed_blocks.pre_commit_check_if_skip(&block_data) {
+                    tracing::info!(block_height = %block_data.header.height, "Skipping commit of empty block");
+                    continue;
+                }
+
+                tracing::info!(block_height = %block_data.header.height, "Dequeued block to be processed");
+
+                return Some(block_data);
             }
-            poll => poll,
-        }
-    })
-    .await
+
+            None
+        })
+    }
 }
 
 fn with_time_taken<F, T>(checkpoint: &mut Instant, callback: F) -> T

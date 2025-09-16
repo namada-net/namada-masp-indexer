@@ -47,16 +47,9 @@ impl UnprocessedBlocks {
         self.empty_block_to_commit.map(Block::empty_block)
     }
 
-    pub fn next_to_process(&mut self, incoming_block: Block) -> Option<Block> {
-        if self.next_height == incoming_block.header.height {
-            self.increment_next_height();
-            return Some(incoming_block);
-        }
-
+    pub fn enqueue_block(&mut self, incoming_block: Block) {
         self.buffer
             .insert(incoming_block.header.height, incoming_block);
-
-        self.dequeue_next_block()
     }
 
     pub fn dequeue_next_block(&mut self) -> Option<Block> {
