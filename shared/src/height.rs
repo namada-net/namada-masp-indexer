@@ -56,6 +56,10 @@ impl UnprocessedBlocks {
         self.buffer
             .insert(incoming_block.header.height, incoming_block);
 
+        self.dequeue_next_block()
+    }
+
+    pub fn dequeue_next_block(&mut self) -> Option<Block> {
         let can_process_buffer_head =
             *self.buffer.first_entry()?.key() == self.next_height;
 
