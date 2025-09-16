@@ -36,22 +36,37 @@ where
             ControlFlow::Break(()) => return ControlFlow::Break(()),
             ControlFlow::Continue(Ok(x)) => return ControlFlow::Continue(x),
             ControlFlow::Continue(Err(e)) => {
-                if exit_handle::must_exit() {
-                    return ControlFlow::Break(());
-                }
-
-                let jitter =
-                    duration.mul_f64(rand::random_range(0.75f64..=1.25));
-
-                tracing::error!(
-                    summary = %e,
-                    full = ?e,
-                    after = ?jitter,
-                    "Retrying execution"
-                );
-
-                tokio::time::sleep(jitter).await;
+                retry_sleep_with_jitter(duration, e).await;
             }
         }
     }
+}
+
+async fn retry_sleep_with_jitter<E: Display + Debug>(duration: Duration, e: E) {
+    if exit_handle::must_exit() {
+        return;
+    }
+
+    let jitter = duration.mul_f64(rand::random_range(0.75f64..=1.25));
+
+    tracing::error!(
+        summary = %e,
+        full = ?e,
+        after = ?jitter,
+        "Retrying execution"
+    );
+
+    let fut = tokio::time::sleep(jitter);
+    futures::pin_mut!(fut);
+
+    poll_fn(|cx| {
+        use futures::future::FutureExt;
+
+        if exit_handle::must_exit() {
+            return Poll::Ready(());
+        }
+
+        fut.as_mut().poll_unpin(cx)
+    })
+    .await;
 }
