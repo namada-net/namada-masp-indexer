@@ -45,6 +45,11 @@ const BLOCK_BUFFER_SIZE: usize = 32;
 
 #[tokio::main]
 async fn main() -> Result<(), MainError> {
+    main_inner().await?;
+    std::process::exit(0)
+}
+
+async fn main_inner() -> Result<(), MainError> {
     let AppConfig {
         cometbft_url,
         database_url,
