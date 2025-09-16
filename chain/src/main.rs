@@ -143,16 +143,21 @@ fn fetch_blocks_and_get_handle(
     retry_interval: Duration,
     client: HttpClient,
 ) -> FetchedBlocks {
-    let (tx, rx) = mpsc::unbounded_channel();
+    let max_concurrent_fetches = if max_concurrent_fetches <= 1 {
+        DEFAULT_MAX_CONCURRENT_FETCHES
+    } else {
+        max_concurrent_fetches
+    };
+
+    // NB: Halve the cap of the channel over `max_concurrent_fetches`,
+    // since we wish to generate a backpressure over the channel, while
+    // `max_concurrent_fetches` concurrent fetches are happening.
+    let (tx, rx) = mpsc::channel(max_concurrent_fetches >> 1);
 
     tokio::spawn(async move {
         let mut heights_to_process = FollowingHeights::after(last_block_height);
 
-        let sem = Arc::new(Semaphore::new(if max_concurrent_fetches == 0 {
-            DEFAULT_MAX_CONCURRENT_FETCHES
-        } else {
-            max_concurrent_fetches
-        }));
+        let sem = Arc::new(Semaphore::new(max_concurrent_fetches));
 
         while let Some(block_height) = heights_to_process
             .next_height(&client, retry_interval)
@@ -201,7 +206,7 @@ fn fetch_blocks_and_get_handle(
                     return;
                 };
 
-                match tx.send(block_data) {
+                match tx.send(block_data).await {
                     Err(_) if exit_handle::must_exit() => {}
                     Err(err) => panic!(
                         "Block data consumer has terminated unexpectedly: \
@@ -440,12 +445,12 @@ async fn validate_masp_state(
 }
 
 struct FetchedBlocks {
-    fetched_blocks: mpsc::UnboundedReceiver<Block>,
+    fetched_blocks: mpsc::Receiver<Block>,
     scratch_buffer: Vec<Block>,
 }
 
 impl FetchedBlocks {
-    fn new(fetched_blocks: mpsc::UnboundedReceiver<Block>) -> Self {
+    fn new(fetched_blocks: mpsc::Receiver<Block>) -> Self {
         Self {
             fetched_blocks,
             scratch_buffer: Vec::with_capacity(BLOCK_BUFFER_SIZE),
