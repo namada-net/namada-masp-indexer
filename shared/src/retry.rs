@@ -1,7 +1,9 @@
 //! Retry utilities.
 
 use std::fmt::{Debug, Display};
+use std::future::poll_fn;
 use std::ops::ControlFlow;
+use std::task::Poll;
 
 use tokio::time::Duration;
 
@@ -17,9 +19,23 @@ where
     E: Display + Debug,
 {
     loop {
-        match future_generator().await {
-            Ok(x) => return ControlFlow::Continue(x),
-            Err(e) => {
+        let fut = future_generator();
+        futures::pin_mut!(fut);
+
+        let wrapped_fut = poll_fn(|cx| {
+            use futures::future::FutureExt;
+
+            if exit_handle::must_exit() {
+                return Poll::Ready(ControlFlow::Break(()));
+            }
+
+            fut.as_mut().map(ControlFlow::Continue).poll_unpin(cx)
+        });
+
+        match wrapped_fut.await {
+            ControlFlow::Break(()) => return ControlFlow::Break(()),
+            ControlFlow::Continue(Ok(x)) => return ControlFlow::Continue(x),
+            ControlFlow::Continue(Err(e)) => {
                 if exit_handle::must_exit() {
                     return ControlFlow::Break(());
                 }
