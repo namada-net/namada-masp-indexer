@@ -1,4 +1,8 @@
+use std::time::Duration;
+
 use tendermint_rpc::HttpClient;
+
+const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Clone, Debug)]
 pub struct Client {
@@ -10,6 +14,7 @@ impl Client {
         let url = ur.parse().expect("Invalid URL");
         let inner = reqwest::Client::builder()
             .cookie_store(true)
+            .timeout(DEFAULT_REQUEST_TIMEOUT)
             .build()
             .expect("Failed to create HTTP client");
         let http_client = HttpClient::new_from_parts(
