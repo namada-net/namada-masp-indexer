@@ -1,7 +1,9 @@
 //! Retry utilities.
 
 use std::fmt::{Debug, Display};
+use std::future::poll_fn;
 use std::ops::ControlFlow;
+use std::task::Poll;
 
 use tokio::time::Duration;
 
@@ -17,25 +19,54 @@ where
     E: Display + Debug,
 {
     loop {
-        match future_generator().await {
-            Ok(x) => return ControlFlow::Continue(x),
-            Err(e) => {
-                if exit_handle::must_exit() {
-                    return ControlFlow::Break(());
-                }
+        let fut = future_generator();
+        futures::pin_mut!(fut);
 
-                let jitter =
-                    duration.mul_f64(rand::random_range(0.75f64..=1.25));
+        let wrapped_fut = poll_fn(|cx| {
+            use futures::future::FutureExt;
 
-                tracing::error!(
-                    summary = %e,
-                    full = ?e,
-                    after = ?jitter,
-                    "Retrying execution"
-                );
+            if exit_handle::must_exit() {
+                return Poll::Ready(ControlFlow::Break(()));
+            }
 
-                tokio::time::sleep(jitter).await;
+            fut.as_mut().map(ControlFlow::Continue).poll_unpin(cx)
+        });
+
+        match wrapped_fut.await {
+            ControlFlow::Break(()) => return ControlFlow::Break(()),
+            ControlFlow::Continue(Ok(x)) => return ControlFlow::Continue(x),
+            ControlFlow::Continue(Err(e)) => {
+                retry_sleep_with_jitter(duration, e).await;
             }
         }
     }
+}
+
+async fn retry_sleep_with_jitter<E: Display + Debug>(duration: Duration, e: E) {
+    if exit_handle::must_exit() {
+        return;
+    }
+
+    let jitter = duration.mul_f64(rand::random_range(0.75f64..=1.25));
+
+    tracing::error!(
+        summary = %e,
+        full = ?e,
+        after = ?jitter,
+        "Retrying execution"
+    );
+
+    let fut = tokio::time::sleep(jitter);
+    futures::pin_mut!(fut);
+
+    poll_fn(|cx| {
+        use futures::future::FutureExt;
+
+        if exit_handle::must_exit() {
+            return Poll::Ready(());
+        }
+
+        fut.as_mut().poll_unpin(cx)
+    })
+    .await;
 }
