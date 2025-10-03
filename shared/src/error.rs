@@ -1,5 +1,72 @@
 use std::fmt;
 
+use tendermint_rpc::error::{
+    Error as TendermintRpcError, ErrorDetail as TendermintRpcErrorDetail,
+};
+use tendermint_rpc::response_error::Code as TendermintRpcCode;
+
+/// Override the log level of errors.
+///
+/// Changes logs from [`tracing::error`] to [`tracing::debug`].
+pub trait SilenceLog {
+    fn silence_log(&self) -> bool;
+}
+
+impl SilenceLog for CometWrapperError {
+    fn silence_log(&self) -> bool {
+        // Check if the error originates from a block that hasn't been committed
+        // yet
+        if let Some(err) = self
+            .0
+            .chain()
+            .find_map(|err| err.downcast_ref::<TendermintRpcError>())
+        {
+            let TendermintRpcErrorDetail::Response(resp) = err.detail() else {
+                return false;
+            };
+
+            if resp.source.code() != TendermintRpcCode::InternalError {
+                return false;
+            }
+
+            return resp.source.data().is_some_and(|msg| {
+                msg.contains("could not find results for height")
+            });
+        }
+
+        // By default, never silence error logs
+        false
+    }
+}
+
+impl SilenceLog for MainError {
+    fn silence_log(&self) -> bool {
+        false
+    }
+}
+
+impl SilenceLog for anyhow::Error {
+    fn silence_log(&self) -> bool {
+        false
+    }
+}
+
+pub struct CometWrapperError(pub anyhow::Error);
+
+impl fmt::Debug for CometWrapperError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        <anyhow::Error as fmt::Debug>::fmt(&self.0, f)
+    }
+}
+
+impl fmt::Display for CometWrapperError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        <anyhow::Error as fmt::Display>::fmt(&self.0, f)
+    }
+}
+
+impl std::error::Error for CometWrapperError {}
+
 #[derive(PartialEq, Eq)]
 pub struct MainError;
 

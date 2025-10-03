@@ -16,7 +16,7 @@ use clap::Parser;
 use namada_sdk::masp_primitives::transaction::Transaction as MaspTransaction;
 use shared::block::Block;
 use shared::client::Client;
-use shared::error::{IntoMainError, MainError};
+use shared::error::{CometWrapperError, IntoMainError, MainError};
 use shared::height::{BlockHeight, FollowingHeights, UnprocessedBlocks};
 use shared::indexed_tx::MaspIndexedTx;
 use shared::transaction::Transaction;
@@ -194,7 +194,8 @@ fn fetch_blocks_and_get_handle(
                                 &client,
                                 block_height,
                             )
-                            .await?;
+                            .await
+                            .map_err(CometWrapperError)?;
 
                         with_time_taken(&mut checkpoint, |time_taken| {
                             tracing::info!(
@@ -204,7 +205,7 @@ fn fetch_blocks_and_get_handle(
                             );
                         });
 
-                        anyhow::Ok(block_data)
+                        Ok::<_, CometWrapperError>(block_data)
                     })
                     .await
                 else {
