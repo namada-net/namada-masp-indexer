@@ -269,10 +269,14 @@ fn commit_inner(
                         .values(chunk)
                         .on_conflict_do_nothing()
                         .execute(transaction_conn)
-                        .with_context(|| format!(
-                            "Failed to insert witness batch {} ({} witnesses)",
-                            batch_idx + 1, chunk.len()
-                        ))?;
+                        .with_context(|| {
+                            format!(
+                                "Failed to insert witness batch {} ({} \
+                                 witnesses)",
+                                batch_idx + 1,
+                                chunk.len()
+                            )
+                        })?;
 
                     if total > BATCH_SIZE {
                         tracing::debug!(
