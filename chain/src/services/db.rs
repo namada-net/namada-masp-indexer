@@ -178,130 +178,109 @@ pub async fn get_last_witness_map(conn: Object) -> anyhow::Result<WitnessMap> {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn commit(
+pub async fn commit(
     checkpoint: &mut Instant,
     conn: &Object,
     chain_state: ChainState,
-    commitment_tree: &mut CommitmentTree,
-    witness_map: &mut WitnessMap,
-    notes_index: &mut TxNoteMap,
-    shielded_txs: &mut BTreeMap<MaspIndexedTx, Transaction>,
+    commitment_tree: CommitmentTree,
+    witness_map: WitnessMap,
+    notes_index: TxNoteMap,
+    shielded_txs: BTreeMap<MaspIndexedTx, Transaction>,
 ) -> anyhow::Result<()> {
     tracing::info!(
         block_height = %chain_state.block_height,
         "Beginning block commit"
     );
 
-    tokio::task::block_in_place(|| {
-        commit_inner(
-            conn,
-            chain_state,
-            commitment_tree,
-            witness_map,
-            notes_index,
-            shielded_txs,
-        )
-    })?;
+    conn.interact(move |conn| {
+        conn.build_transaction()
+            .read_write()
+            .run(|transaction_conn| {
+                if let Some(commitment_tree_db) =
+                    commitment_tree.into_db(chain_state.block_height)
+                {
+                    tracing::debug!(
+                        block_height = %chain_state.block_height,
+                        "Pre-committing commitment tree"
+                    );
 
-    with_time_taken(checkpoint, |time_taken| {
-        tracing::info!(
-            block_height = %chain_state.block_height,
-            time_taken,
-            "Committed new block"
-        );
-    });
+                    diesel::insert_into(schema::commitment_tree::table)
+                        .values(&commitment_tree_db)
+                        .on_conflict_do_nothing()
+                        .execute(transaction_conn)
+                        .context("Failed to insert commitment tree into db")?;
 
-    Ok(())
-}
+                    tracing::debug!(
+                        block_height = %chain_state.block_height,
+                        "Pre-committed commitment tree"
+                    );
+                }
 
-#[allow(clippy::too_many_arguments)]
-fn commit_inner(
-    pool_conn: &Object,
-    chain_state: ChainState,
-    commitment_tree: &mut CommitmentTree,
-    witness_map: &mut WitnessMap,
-    notes_index: &mut TxNoteMap,
-    shielded_txs: &mut BTreeMap<MaspIndexedTx, Transaction>,
-) -> anyhow::Result<()> {
-    let mut conn = pool_conn
-        .lock()
-        .expect("Database connection pool mutex has been poisoned");
+                if let Some(witness_map_db) =
+                    witness_map.into_db(chain_state.block_height)
+                {
+                    let total = witness_map_db.len();
+                    tracing::debug!(
+                        block_height = %chain_state.block_height,
+                        total_witnesses = total,
+                        "Pre-committing witness map"
+                    );
+                    
+                    const BATCH_SIZE: usize = 20000;
+                    
+                    for (batch_idx, chunk) in witness_map_db.chunks(BATCH_SIZE).enumerate() {
+                        diesel::insert_into(schema::witness::table)
+                            .values(chunk)
+                            .on_conflict_do_nothing()
+                            .execute(transaction_conn)
+                            .with_context(|| format!(
+                                "Failed to insert witness batch {} ({} witnesses)",
+                                batch_idx + 1, chunk.len()
+                            ))?;
+                        
+                        if total > BATCH_SIZE {
+                            tracing::debug!(
+                                block_height = %chain_state.block_height,
+                                batch = batch_idx + 1,
+                                "Inserted witness batch"
+                            );
+                        }
+                    }
+                    
+                    tracing::debug!(
+                        block_height = %chain_state.block_height,
+                        "Pre-committed witness map"
+                    );
+                }
 
-    conn.build_transaction()
-        .read_write()
-        .run(|transaction_conn| {
-            if let Some(commitment_tree_db) =
-                commitment_tree.into_db(chain_state.block_height)
-            {
-                tracing::debug!(
-                    block_height = %chain_state.block_height,
-                    "Pre-committing commitment tree"
-                );
+                if !notes_index.is_empty() {
+                    tracing::debug!(
+                        block_height = %chain_state.block_height,
+                        "Pre-committing notes map"
+                    );
 
-                diesel::insert_into(schema::commitment_tree::table)
-                    .values(&commitment_tree_db)
-                    .on_conflict_do_nothing()
-                    .execute(transaction_conn)
-                    .context("Failed to insert commitment tree into db")?;
+                    let notes_index_db = notes_index.into_db();
+                    diesel::insert_into(schema::notes_index::table)
+                        .values(&notes_index_db)
+                        .on_conflict_do_nothing()
+                        .execute(transaction_conn)
+                        .context("Failed to insert notes map into db")?;
 
-                tracing::debug!(
-                    block_height = %chain_state.block_height,
-                    "Pre-committed commitment tree"
-                );
-            }
+                    tracing::debug!(
+                        block_height = %chain_state.block_height,
+                        "Pre-committed notes map"
+                    );
+                }
 
-            if let Some(witness_map_db) =
-                witness_map.into_db(chain_state.block_height)
-            {
-                tracing::debug!(
-                    block_height = %chain_state.block_height,
-                    "Pre-committing witness map"
-                );
+                if !shielded_txs.is_empty() {
+                    tracing::debug!(
+                        block_height = %chain_state.block_height,
+                        "Pre-committing shielded txs"
+                    );
 
-                diesel::insert_into(schema::witness::table)
-                    .values(&witness_map_db)
-                    .on_conflict_do_nothing()
-                    .execute(transaction_conn)
-                    .context("Failed to insert witness map into db")?;
-
-                tracing::debug!(
-                    block_height = %chain_state.block_height,
-                    "Pre-committed witness map"
-                );
-            }
-
-            if !notes_index.is_empty() {
-                tracing::debug!(
-                    block_height = %chain_state.block_height,
-                    "Pre-committing notes map"
-                );
-
-                let notes_index_db = notes_index.into_db();
-                diesel::insert_into(schema::notes_index::table)
-                    .values(&notes_index_db)
-                    .on_conflict_do_nothing()
-                    .execute(transaction_conn)
-                    .context("Failed to insert notes map into db")?;
-
-                tracing::debug!(
-                    block_height = %chain_state.block_height,
-                    "Pre-committed notes map"
-                );
-            }
-
-            if !shielded_txs.is_empty() {
-                tracing::debug!(
-                    block_height = %chain_state.block_height,
-                    "Pre-committing shielded txs"
-                );
-
-                let shielded_txs_db = {
-                    let mut rows = Vec::with_capacity(shielded_txs.len());
-
-                    while let Some((MaspIndexedTx { kind, indexed_tx }, tx)) =
-                        shielded_txs.pop_first()
-                    {
-                        rows.push({
+                    let shielded_txs_db = shielded_txs
+                        .iter()
+                        .map(|(MaspIndexedTx { kind, indexed_tx }, tx)| {
                             let is_masp_fee_payment = matches!(
                                 kind,
                                 shared::indexed_tx::MaspTxKind::FeePayment
@@ -315,48 +294,56 @@ fn commit_inner(
                                     as i32,
                                 is_masp_fee_payment,
                             }
-                        });
-                    }
+                        })
+                        .collect::<Vec<TxInsertDb>>();
+                    diesel::insert_into(schema::tx::table)
+                        .values(&shielded_txs_db)
+                        .on_conflict_do_nothing()
+                        .execute(transaction_conn)
+                        .context("Failed to insert shielded txs into db")?;
 
-                    rows
-                };
-                diesel::insert_into(schema::tx::table)
-                    .values(&shielded_txs_db)
-                    .on_conflict_do_nothing()
+                    tracing::debug!(
+                        block_height = %chain_state.block_height,
+                        "Pre-committed shielded txs"
+                    );
+                }
+
+                let chain_state_db = chain_state.into_db();
+                diesel::insert_into(schema::chain_state::table)
+                    .values(&chain_state_db)
+                    .on_conflict(schema::chain_state::dsl::id)
+                    .do_update()
+                    .set(
+                        schema::chain_state::block_height
+                            .eq(chain_state_db.block_height),
+                    )
                     .execute(transaction_conn)
-                    .context("Failed to insert shielded txs into db")?;
+                    .context("Failed to insert last chain state into db")?;
 
                 tracing::debug!(
                     block_height = %chain_state.block_height,
-                    "Pre-committed shielded txs"
+                    "All data was successfully pre-committed, committing..."
                 );
-            }
 
-            let chain_state_db = chain_state.into_db();
-            diesel::insert_into(schema::chain_state::table)
-                .values(&chain_state_db)
-                .on_conflict(schema::chain_state::dsl::id)
-                .do_update()
-                .set(
-                    schema::chain_state::block_height
-                        .eq(chain_state_db.block_height),
-                )
-                .execute(transaction_conn)
-                .context("Failed to insert last chain state into db")?;
+                anyhow::Ok(())
+            })
+    })
+    .await
+    .context_db_interact_error()?
+    .with_context(|| {
+        format!(
+            "Failed to commit block at height={}",
+            chain_state.block_height
+        )
+    })?;
 
-            tracing::debug!(
-                block_height = %chain_state.block_height,
-                "All data was successfully pre-committed, committing..."
-            );
-
-            anyhow::Ok(())
-        })
-        .with_context(|| {
-            format!(
-                "Failed to commit block at height={}",
-                chain_state.block_height
-            )
-        })?;
+    with_time_taken(checkpoint, |time_taken| {
+        tracing::info!(
+            block_height = %chain_state.block_height,
+            time_taken,
+            "Committed new block"
+        );
+    });
 
     Ok(())
 }
