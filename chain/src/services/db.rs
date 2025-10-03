@@ -253,16 +253,39 @@ fn commit_inner(
             if let Some(witness_map_db) =
                 witness_map.into_db(chain_state.block_height)
             {
+                let total = witness_map_db.len();
                 tracing::debug!(
                     block_height = %chain_state.block_height,
+                    total_witnesses = total,
                     "Pre-committing witness map"
                 );
 
-                diesel::insert_into(schema::witness::table)
-                    .values(&witness_map_db)
-                    .on_conflict_do_nothing()
-                    .execute(transaction_conn)
-                    .context("Failed to insert witness map into db")?;
+                const BATCH_SIZE: usize = 20000;
+
+                for (batch_idx, chunk) in
+                    witness_map_db.chunks(BATCH_SIZE).enumerate()
+                {
+                    diesel::insert_into(schema::witness::table)
+                        .values(chunk)
+                        .on_conflict_do_nothing()
+                        .execute(transaction_conn)
+                        .with_context(|| {
+                            format!(
+                                "Failed to insert witness batch {} ({} \
+                                 witnesses)",
+                                batch_idx + 1,
+                                chunk.len()
+                            )
+                        })?;
+
+                    if total > BATCH_SIZE {
+                        tracing::debug!(
+                            block_height = %chain_state.block_height,
+                            batch = batch_idx + 1,
+                            "Inserted witness batch"
+                        );
+                    }
+                }
 
                 tracing::debug!(
                     block_height = %chain_state.block_height,
