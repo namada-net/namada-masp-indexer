@@ -342,6 +342,25 @@ async fn build_and_commit_masp_data_at_height(
     let num_transactions = block_data.transactions.len();
     let block_height = block_data.header.height;
 
+    // Fast-path: commit empty blocks immediately to maintain chain_state progress
+    if num_transactions == 0 {
+        tracing::info!(%block_height, "Processing empty block");
+        let chain_state = ChainState::new(block_data.header.height);
+
+        db_service::commit(
+            &mut checkpoint,
+            &conn_obj,
+            chain_state,
+            commitment_tree,
+            witness_map,
+            tx_notes_index,
+            shielded_txs,
+        )
+        .into_db_error()?;
+
+        return Ok(());
+    }
+
     tracing::info!(
         %block_height,
         num_transactions,
@@ -504,10 +523,6 @@ impl FetchedBlocks {
                 // This is because the block is empty. We can make a
                 // single remote procedure call to Postgres, when we
                 // exit.
-                if unprocessed_blocks.pre_commit_check_if_skip(&block_data) {
-                    tracing::info!(block_height = %block_data.header.height, "Skipping commit of empty block");
-                    continue;
-                }
 
                 tracing::info!(block_height = %block_data.header.height, "Dequeued block to be processed");
 
