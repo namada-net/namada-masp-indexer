@@ -518,14 +518,12 @@ impl FetchedBlocks {
         }
 
         std::iter::from_fn(|| {
-            while let Some(block_data) = unprocessed_blocks.dequeue_next_block()
-            {
+            if let Some(block_data) = unprocessed_blocks.dequeue_next_block() {
                 tracing::info!(block_height = %block_data.header.height, "Dequeued block to be processed");
-
-                return Some(block_data);
+                Some(block_data)
+            } else {
+                None
             }
-
-            None
         })
     }
 }
