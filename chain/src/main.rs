@@ -342,7 +342,8 @@ async fn build_and_commit_masp_data_at_height(
     let num_transactions = block_data.transactions.len();
     let block_height = block_data.header.height;
 
-    // Fast-path: commit empty blocks immediately to maintain chain_state progress
+    // Fast-path: commit empty blocks immediately to maintain chain_state
+    // progress
     if num_transactions == 0 {
         tracing::info!(%block_height, "Processing empty block");
         let chain_state = ChainState::new(block_data.header.height);
@@ -519,11 +520,6 @@ impl FetchedBlocks {
         std::iter::from_fn(|| {
             while let Some(block_data) = unprocessed_blocks.dequeue_next_block()
             {
-                // Check if we can skip committing this block for now.
-                // This is because the block is empty. We can make a
-                // single remote procedure call to Postgres, when we
-                // exit.
-
                 tracing::info!(block_height = %block_data.header.height, "Dequeued block to be processed");
 
                 return Some(block_data);
