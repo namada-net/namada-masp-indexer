@@ -692,7 +692,7 @@ dependencies = [
 
 [[package]]
 name = "block-index"
-version = "1.4.4"
+version = "1.4.6"
 dependencies = [
  "anyhow",
  "bincode",
@@ -946,7 +946,7 @@ dependencies = [
 
 [[package]]
 name = "chain"
-version = "1.4.4"
+version = "1.4.6"
 dependencies = [
  "anyhow",
  "clap",
@@ -5351,7 +5351,7 @@ dependencies = [
 
 [[package]]
 name = "orm"
-version = "1.4.4"
+version = "1.4.6"
 dependencies = [
  "diesel",
  "serde",
@@ -6790,7 +6790,7 @@ dependencies = [
 
 [[package]]
 name = "shared"
-version = "1.4.4"
+version = "1.4.6"
 dependencies = [
  "anyhow",
  "futures",
@@ -8175,7 +8175,7 @@ checksum = "5f20c57d8d7db6d3b86154206ae5d8fba62dd39573114de97c2cb0578251f8e1"
 
 [[package]]
 name = "webserver"
-version = "1.4.4"
+version = "1.4.6"
 dependencies = [
  "anyhow",
  "axum",
