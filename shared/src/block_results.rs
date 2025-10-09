@@ -9,38 +9,50 @@ use tendermint_rpc::endpoint::block_results;
 pub fn locate_masp_txs(
     raw_block_results: &block_results::Response,
 ) -> Result<Vec<MaspEvent>, String> {
+    fn cast_event(
+        event: &tendermint::abci::Event,
+    ) -> Result<Option<MaspEvent>, String> {
+        // Check if the event is a Masp one
+        let Ok(kind) = EventType::from_str(&event.kind) else {
+            return Ok(None);
+        };
+
+        let kind = if kind == namada_tx::event::masp_types::TRANSFER {
+            MaspEventKind::Transfer
+        } else if kind == namada_tx::event::masp_types::FEE_PAYMENT {
+            MaspEventKind::FeePayment
+        } else {
+            return Ok(None);
+        };
+        // Extract the data from the event's attributes, propagate errors if
+        // the masp event does not follow the expected format
+        let data = MaspTxRef::read_from_event_attributes(&event.attributes)
+            .map_err(|e| e.to_string())?;
+        let tx_index = IndexedTx::read_from_event_attributes(&event.attributes)
+            .map_err(|e| e.to_string())?;
+
+        Ok(Some(MaspEvent {
+            tx_index,
+            kind,
+            data,
+        }))
+    }
+
+    // NOTE: starting with comet v0.38, end events are only available from the
+    // `finalize_block_events` field. For backward-compatibility reasons we
+    // still evaluate `end_block_events` as well and merge the two outputs
     let maybe_masp_events: Result<Vec<_>, String> = raw_block_results
         .end_block_events
         .as_ref()
         .unwrap_or(&vec![])
         .iter()
-        .map(|event| {
-            // Check if the event is a Masp one
-            let Ok(kind) = EventType::from_str(&event.kind) else {
-                return Ok(None);
-            };
-
-            let kind = if kind == namada_tx::event::masp_types::TRANSFER {
-                MaspEventKind::Transfer
-            } else if kind == namada_tx::event::masp_types::FEE_PAYMENT {
-                MaspEventKind::FeePayment
-            } else {
-                return Ok(None);
-            };
-            // Extract the data from the event's attributes, propagate errors if
-            // the masp event does not follow the expected format
-            let data = MaspTxRef::read_from_event_attributes(&event.attributes)
-                .map_err(|e| e.to_string())?;
-            let tx_index =
-                IndexedTx::read_from_event_attributes(&event.attributes)
-                    .map_err(|e| e.to_string())?;
-
-            Ok(Some(MaspEvent {
-                tx_index,
-                kind,
-                data,
-            }))
-        })
+        .map(cast_event)
+        .chain(
+            raw_block_results
+                .finalize_block_events
+                .iter()
+                .map(cast_event),
+        )
         .collect();
 
     Ok(maybe_masp_events?.into_iter().flatten().collect())
