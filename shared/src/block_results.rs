@@ -10,9 +10,7 @@ pub fn locate_masp_txs(
     raw_block_results: &block_results::Response,
 ) -> Result<Vec<MaspEvent>, String> {
     let maybe_masp_events: Result<Vec<_>, String> = raw_block_results
-        .end_block_events
-        .as_ref()
-        .unwrap_or(&vec![])
+        .finalize_block_events
         .iter()
         .map(|event| {
             // Check if the event is a Masp one
