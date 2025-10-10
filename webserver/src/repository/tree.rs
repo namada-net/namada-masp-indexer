@@ -30,11 +30,7 @@ impl TreeRepositoryTrait for TreeRepository {
         &self,
         block_height: i32,
     ) -> anyhow::Result<Option<TreeDb>> {
-        let mut conn = self
-            .app_state
-            .get_db_connection()
-            .await
-            .context("Failed to get DB connection")?;
+        let mut conn = self.app_state.get_db_connection().await?;
 
         let Some(closest_height) = notes_index::table
             .order(notes_index::dsl::block_height.desc())
@@ -43,7 +39,12 @@ impl TreeRepositoryTrait for TreeRepository {
             .first::<i32>(&mut conn)
             .await
             .optional()
-            .context("Query failed to find closest block height")?
+            .with_context(|| {
+                format!(
+                    "Failed to fetch height from the db closest to the \
+                     provided height {block_height}"
+                )
+            })?
         else {
             return Ok(None);
         };
@@ -55,8 +56,9 @@ impl TreeRepositoryTrait for TreeRepository {
             .await
             .with_context(|| {
                 format!(
-                    "Query failed for commitment tree at height \
-                     {closest_height}"
+                    "Failed to fetch commitment tree from the db at height \
+                     {closest_height} (the closest to the provided height \
+                     {block_height})"
                 )
             })?;
 

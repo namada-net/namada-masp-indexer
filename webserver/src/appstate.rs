@@ -42,9 +42,8 @@ impl AppState {
     pub async fn get_db_connection(
         &self,
     ) -> anyhow::Result<Object<AsyncPgConnection>> {
-        self.db
-            .get()
-            .await
-            .context("Failed to get db connection handle from deadpool")
+        self.db.get().await.context(
+            "Failed to get db connection handle from pool of db connections",
+        )
     }
 }

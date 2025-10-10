@@ -28,17 +28,13 @@ impl NamadaStateRepositoryTrait for NamadaStateRepository {
     }
 
     async fn get_latest_height(&self) -> anyhow::Result<Option<BlockHeight>> {
-        let mut conn = self
-            .app_state
-            .get_db_connection()
-            .await
-            .context("Failed to get DB connection")?;
+        let mut conn = self.app_state.get_db_connection().await?;
 
         let max_height: Option<i32> = chain_state::table
             .select(max(chain_state::dsl::block_height))
             .first(&mut conn)
             .await
-            .context("Query failed to get latest block height")?;
+            .context("Failed to get latest block height from db")?;
 
         Ok(max_height.map(BlockHeight::from))
     }
@@ -46,28 +42,22 @@ impl NamadaStateRepositoryTrait for NamadaStateRepository {
     async fn get_block_index(
         &self,
     ) -> anyhow::Result<Option<(i32, BinaryFuse16)>> {
-        let mut conn = self
-            .app_state
-            .get_db_connection()
-            .await
-            .context("Failed to get DB connection")?;
+        let mut conn = self.app_state.get_db_connection().await?;
 
         let Some(index) = block_index::table
             .select(BlockIndex::as_select())
             .first::<BlockIndex>(&mut conn)
             .await
             .optional()
-            .context("Query failed to get latest block index")?
+            .context("Failed to get latest block index from db")?
         else {
             return Ok(None);
         };
 
-        let deserialized_filter = tokio::task::spawn_blocking(move || {
+        let deserialized_filter = tokio::task::block_in_place(|| {
             bincode::deserialize::<BinaryFuse16>(&index.serialized_data)
         })
-        .await
-        .context("Task for block index deserialization panicked")?
-        .context("Failed to deserialize block index data")?;
+        .context("Failed to deserialize block index data returned from db")?;
 
         Ok(Some((index.block_height, deserialized_filter)))
     }

@@ -28,11 +28,7 @@ impl NotesIndexRepositoryTrait for NotesIndexRepository {
         &self,
         block_height: i32,
     ) -> anyhow::Result<Vec<NotesIndexDb>> {
-        let mut conn = self
-            .app_state
-            .get_db_connection()
-            .await
-            .context("Failed to get DB connection")?;
+        let mut conn = self.app_state.get_db_connection().await?;
 
         let notes = notes_index::table
             .filter(notes_index::dsl::block_height.le(block_height))
@@ -41,7 +37,8 @@ impl NotesIndexRepositoryTrait for NotesIndexRepository {
             .await
             .with_context(|| {
                 format!(
-                    "Query failed for notes index up to block {block_height}"
+                    "Failed to retrieve note indices up to block height \
+                     {block_height} from db"
                 )
             })?;
 

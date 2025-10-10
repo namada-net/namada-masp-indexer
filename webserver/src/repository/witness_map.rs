@@ -30,11 +30,7 @@ impl WitnessMapRepositoryTrait for WitnessMapRepository {
         &self,
         block_height: i32,
     ) -> anyhow::Result<(Vec<WitnessDb>, i32)> {
-        let mut conn = self
-            .app_state
-            .get_db_connection()
-            .await
-            .context("Failed to get DB connection")?;
+        let mut conn = self.app_state.get_db_connection().await?;
 
         let Some(closest_height) = notes_index::table
             .order(notes_index::dsl::block_height.desc())
@@ -43,7 +39,12 @@ impl WitnessMapRepositoryTrait for WitnessMapRepository {
             .first::<i32>(&mut conn)
             .await
             .optional()
-            .context("Query failed to find closest block height")?
+            .with_context(|| {
+                format!(
+                    "Failed to fetch height from the db closest to the \
+                     provided height {block_height}"
+                )
+            })?
         else {
             return Ok((Vec::new(), block_height));
         };
@@ -54,7 +55,11 @@ impl WitnessMapRepositoryTrait for WitnessMapRepository {
             .get_results(&mut conn)
             .await
             .with_context(|| {
-                format!("Query failed for witnesses at height {closest_height}")
+                format!(
+                    "Failed to fetch witnesses from the db at height \
+                     {closest_height} (the closest to the provided height \
+                     {block_height})"
+                )
             })?;
 
         Ok((witnesses, closest_height))

@@ -1,4 +1,4 @@
-use anyhow::{Context, bail};
+use anyhow::Context;
 use diesel::{
     ExpressionMethods, OptionalExtension, QueryDsl, SelectableHelper,
 };
@@ -32,24 +32,23 @@ impl TxRepositoryTrait for TxRepository {
         from_block_height: i32,
         to_block_height: i32,
     ) -> anyhow::Result<Vec<TxDb>> {
-        let mut conn = self
-            .app_state
-            .get_db_connection()
-            .await
-            .context("Failed to get DB connection")?;
+        let mut conn = self.app_state.get_db_connection().await?;
 
         let latest_block_height: i32 = chain_state::table
             .select(chain_state::dsl::block_height)
             .get_result(&mut conn)
             .await
             .optional()
-            .context("Query failed to get latest block height")?
+            .with_context(|| {
+                "Failed to get the latest block height from the database"
+            })?
             .unwrap_or_default();
 
         if latest_block_height < to_block_height {
-            bail!(
-                "Requested to_block_height ({to_block_height}) exceeds latest \
-                 known block height ({latest_block_height})."
+            anyhow::bail!(
+                "Height range {from_block_height} -- {to_block_height} of the \
+                 requested txs exceeds latest block height \
+                 ({latest_block_height})"
             );
         }
 
@@ -68,8 +67,8 @@ impl TxRepositoryTrait for TxRepository {
             .await
             .with_context(|| {
                 format!(
-                    "Query failed for txs between blocks \
-                     {from_block_height}-{to_block_height}"
+                    "Failed to get transations from the database in the \
+                     height range {from_block_height}-{to_block_height}"
                 )
             })?;
 
