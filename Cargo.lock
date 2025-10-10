@@ -8390,7 +8390,6 @@ dependencies = [
  "axum-prometheus",
  "bincode",
  "clap",
- "deadpool-diesel",
  "diesel",
  "diesel-async",
  "itertools 0.13.0",
