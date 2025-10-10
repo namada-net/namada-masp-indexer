@@ -1,7 +1,9 @@
 use anyhow::Context;
 use diesel::dsl::max;
-use diesel::{OptionalExtension, QueryDsl, RunQueryDsl, SelectableHelper};
-use shared::error::ContextDbInteractError;
+use diesel::{OptionalExtension, QueryDsl, SelectableHelper};
+use diesel_async::RunQueryDsl;
+use orm::block_index::BlockIndex;
+use orm::schema::{block_index, chain_state};
 use shared::height::BlockHeight;
 use xorf::BinaryFuse16;
 
@@ -14,9 +16,7 @@ pub struct NamadaStateRepository {
 
 pub trait NamadaStateRepositoryTrait {
     fn new(app_state: AppState) -> Self;
-
     async fn get_latest_height(&self) -> anyhow::Result<Option<BlockHeight>>;
-
     async fn get_block_index(
         &self,
     ) -> anyhow::Result<Option<(i32, BinaryFuse16)>>;
@@ -28,69 +28,37 @@ impl NamadaStateRepositoryTrait for NamadaStateRepository {
     }
 
     async fn get_latest_height(&self) -> anyhow::Result<Option<BlockHeight>> {
-        let conn = self.app_state.get_db_connection().await.context(
-            "Failed to retrieve connection from the pool of database \
-             connections",
-        )?;
+        let mut conn = self.app_state.get_db_connection().await?;
 
-        let block_height = conn
-            .interact(move |conn| {
-                use orm::schema::chain_state;
-
-                chain_state::dsl::chain_state
-                    .select(max(chain_state::dsl::block_height))
-                    .first::<Option<i32>>(conn)
-            })
+        let max_height: Option<i32> = chain_state::table
+            .select(max(chain_state::dsl::block_height))
+            .first(&mut conn)
             .await
-            .context_db_interact_error()?
             .context("Failed to get latest block height from db")?;
 
-        Ok(block_height.map(BlockHeight::from))
+        Ok(max_height.map(BlockHeight::from))
     }
 
     async fn get_block_index(
         &self,
     ) -> anyhow::Result<Option<(i32, BinaryFuse16)>> {
-        let conn = self.app_state.get_db_connection().await.context(
-            "Failed to retrieve connection from the pool of database \
-             connections",
-        )?;
+        let mut conn = self.app_state.get_db_connection().await?;
 
-        let maybe_index = conn
-            .interact(move |conn| {
-                use orm::block_index::BlockIndex;
-                use orm::schema::block_index::dsl::block_index;
-
-                anyhow::Ok(
-                    block_index
-                        .select(BlockIndex::as_select())
-                        .first::<BlockIndex>(conn)
-                        .optional()
-                        .context("Failed to get latest block index from db")?
-                        .map(
-                            |BlockIndex {
-                                 block_height,
-                                 serialized_data,
-                                 ..
-                             }| {
-                                (block_height, serialized_data)
-                            },
-                        ),
-                )
-            })
+        let Some(index) = block_index::table
+            .select(BlockIndex::as_select())
+            .first::<BlockIndex>(&mut conn)
             .await
-            .context_db_interact_error()??;
+            .optional()
+            .context("Failed to get latest block index from db")?
+        else {
+            return Ok(None);
+        };
 
-        tokio::task::block_in_place(|| {
-            maybe_index
-                .map(|(height, data)| {
-                    let filter = bincode::deserialize(&data).context(
-                        "Failed to deserialize block index data returned from \
-                         db",
-                    )?;
-                    anyhow::Ok((height, filter))
-                })
-                .transpose()
+        let deserialized_filter = tokio::task::block_in_place(|| {
+            bincode::deserialize::<BinaryFuse16>(&index.serialized_data)
         })
+        .context("Failed to deserialize block index data returned from db")?;
+
+        Ok(Some((index.block_height, deserialized_filter)))
     }
 }

@@ -1,8 +1,8 @@
 use anyhow::Context;
-use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper};
+use diesel::{ExpressionMethods, QueryDsl, SelectableHelper};
+use diesel_async::RunQueryDsl;
 use orm::notes_index::NotesIndexDb;
 use orm::schema::notes_index;
-use shared::error::ContextDbInteractError;
 
 use crate::appstate::AppState;
 
@@ -28,24 +28,20 @@ impl NotesIndexRepositoryTrait for NotesIndexRepository {
         &self,
         block_height: i32,
     ) -> anyhow::Result<Vec<NotesIndexDb>> {
-        let conn = self.app_state.get_db_connection().await.context(
-            "Failed to retrieve connection from the pool of database \
-             connections",
-        )?;
+        let mut conn = self.app_state.get_db_connection().await?;
 
-        conn.interact(move |conn| {
-            notes_index::table
-                .filter(notes_index::dsl::block_height.le(block_height))
-                .select(NotesIndexDb::as_select())
-                .get_results(conn)
-                .with_context(|| {
-                    format!(
-                        "Failed to retrieve the notes map up to block height \
-                         {block_height}"
-                    )
-                })
-        })
-        .await
-        .context_db_interact_error()?
+        let notes = notes_index::table
+            .filter(notes_index::dsl::block_height.le(block_height))
+            .select(NotesIndexDb::as_select())
+            .get_results(&mut conn)
+            .await
+            .with_context(|| {
+                format!(
+                    "Failed to retrieve note indices up to block height \
+                     {block_height} from db"
+                )
+            })?;
+
+        Ok(notes)
     }
 }
