@@ -1,11 +1,10 @@
 use anyhow::Context;
 use diesel::{
-    ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl,
-    SelectableHelper,
+    ExpressionMethods, OptionalExtension, QueryDsl, SelectableHelper,
 };
+use diesel_async::RunQueryDsl;
 use orm::schema::{notes_index, witness};
 use orm::witness::WitnessDb;
-use shared::error::ContextDbInteractError;
 
 use crate::appstate::AppState;
 
@@ -31,45 +30,33 @@ impl WitnessMapRepositoryTrait for WitnessMapRepository {
         &self,
         block_height: i32,
     ) -> anyhow::Result<(Vec<WitnessDb>, i32)> {
-        let conn = self.app_state.get_db_connection().await.context(
-            "Failed to retrieve connection from the pool of database \
-             connections",
-        )?;
+        let mut conn = self
+            .app_state
+            .get_db_connection()
+            .await
+            .context("Failed to get DB connection")?;
 
-        conn.interact(move |conn| {
-            conn.build_transaction().read_only().run(|conn| {
-                let Some(closest_height) = notes_index::table
-                    .order(notes_index::dsl::block_height.desc())
-                    .filter(notes_index::dsl::block_height.le(block_height))
-                    .select(notes_index::dsl::block_height)
-                    .first(conn)
-                    .optional()
-                    .with_context(|| {
-                        format!(
-                            "Failed to fetch height from the db closest to \
-                             the provided height {block_height}"
-                        )
-                    })?
-                else {
-                    return anyhow::Ok((vec![], block_height));
-                };
+        let Some(closest_height) = notes_index::table
+            .order(notes_index::dsl::block_height.desc())
+            .filter(notes_index::dsl::block_height.le(block_height))
+            .select(notes_index::dsl::block_height)
+            .first::<i32>(&mut conn)
+            .await
+            .optional()
+            .context("Query failed to find closest block height")?
+        else {
+            return Ok((Vec::new(), block_height));
+        };
 
-                let witnesses = witness::table
-                    .filter(witness::dsl::block_height.eq(closest_height))
-                    .select(WitnessDb::as_select())
-                    .get_results::<WitnessDb>(conn)
-                    .with_context(|| {
-                        format!(
-                            "Failed to fetch witnesses from the db at height \
-                             {closest_height} (the closest to the provided \
-                             height {block_height})"
-                        )
-                    })?;
+        let witnesses = witness::table
+            .filter(witness::dsl::block_height.eq(closest_height))
+            .select(WitnessDb::as_select())
+            .get_results(&mut conn)
+            .await
+            .with_context(|| {
+                format!("Query failed for witnesses at height {closest_height}")
+            })?;
 
-                anyhow::Ok((witnesses, closest_height))
-            })
-        })
-        .await
-        .context_db_interact_error()?
+        Ok((witnesses, closest_height))
     }
 }

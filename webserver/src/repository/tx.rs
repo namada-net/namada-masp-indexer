@@ -1,11 +1,10 @@
-use anyhow::Context;
+use anyhow::{Context, bail};
 use diesel::{
-    BoolExpressionMethods, ExpressionMethods, OptionalExtension, QueryDsl,
-    RunQueryDsl, SelectableHelper,
+    ExpressionMethods, OptionalExtension, QueryDsl, SelectableHelper,
 };
+use diesel_async::RunQueryDsl;
 use orm::schema::{chain_state, tx};
 use orm::tx::TxDb;
-use shared::error::ContextDbInteractError;
 
 use crate::appstate::AppState;
 
@@ -33,51 +32,47 @@ impl TxRepositoryTrait for TxRepository {
         from_block_height: i32,
         to_block_height: i32,
     ) -> anyhow::Result<Vec<TxDb>> {
-        let conn = self.app_state.get_db_connection().await.context(
-            "Failed to retrieve connection from the pool of database \
-             connections",
-        )?;
+        let mut conn = self
+            .app_state
+            .get_db_connection()
+            .await
+            .context("Failed to get DB connection")?;
 
-        conn.interact(move |conn| {
-            conn.build_transaction().read_only().run(move |conn| {
-                let block_height: i32 = chain_state::table
-                    .select(chain_state::dsl::block_height)
-                    .get_result(conn)
-                    .optional()
-                    .with_context(|| {
-                        "Failed to get the latest block height from the \
-                         database"
-                    })?
-                    .unwrap_or_default();
-                if block_height < to_block_height {
-                    anyhow::bail!(
-                        "Requested range {from_block_height} -- \
-                         {to_block_height} exceeds latest block height \
-                         ({block_height})."
-                    )
-                }
-                tx::table
-                    .filter(
-                        tx::dsl::block_height
-                            .ge(from_block_height)
-                            .and(tx::dsl::block_height.le(to_block_height)),
-                    )
-                    .order_by((
-                        tx::dsl::block_height.asc(),
-                        tx::dsl::block_index.asc(),
-                        tx::dsl::masp_tx_index.asc(),
-                    ))
-                    .select(TxDb::as_select())
-                    .get_results(conn)
-                    .with_context(|| {
-                        format!(
-                            "Failed to get transations from the database in \
-                             the range {from_block_height}-{to_block_height}"
-                        )
-                    })
-            })
-        })
-        .await
-        .context_db_interact_error()?
+        let latest_block_height: i32 = chain_state::table
+            .select(chain_state::dsl::block_height)
+            .get_result(&mut conn)
+            .await
+            .optional()
+            .context("Query failed to get latest block height")?
+            .unwrap_or_default();
+
+        if latest_block_height < to_block_height {
+            bail!(
+                "Requested to_block_height ({to_block_height}) exceeds latest \
+                 known block height ({latest_block_height})."
+            );
+        }
+
+        let transactions = tx::table
+            .filter(
+                tx::dsl::block_height
+                    .between(from_block_height, to_block_height),
+            )
+            .order_by((
+                tx::dsl::block_height.asc(),
+                tx::dsl::block_index.asc(),
+                tx::dsl::masp_tx_index.asc(),
+            ))
+            .select(TxDb::as_select())
+            .get_results(&mut conn)
+            .await
+            .with_context(|| {
+                format!(
+                    "Query failed for txs between blocks \
+                     {from_block_height}-{to_block_height}"
+                )
+            })?;
+
+        Ok(transactions)
     }
 }
