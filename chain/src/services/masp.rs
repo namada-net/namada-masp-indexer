@@ -17,13 +17,14 @@ pub fn update_witness_map(
 ) -> anyhow::Result<()> {
     tracing::info!(?indexed_tx, "Updating witness map");
 
-    let mut note_pos = commitment_tree.size();
-    tx_notes_index.insert(indexed_tx, note_pos);
+    let first_note_pos = commitment_tree.size();
+    tx_notes_index.insert(indexed_tx, first_note_pos);
 
-    for so in shielded
+    let shielded_outputs = shielded
         .sapling_bundle()
-        .map_or(&vec![], |x| &x.shielded_outputs)
-    {
+        .map_or(&[][..], |bundle| bundle.shielded_outputs.as_slice());
+
+    for (note_pos, so) in (first_note_pos..).zip(shielded_outputs) {
         // Create merkle tree leaf node from note commitment
         let node = Node::new(so.cmu.to_repr());
 
@@ -39,10 +40,8 @@ pub fn update_witness_map(
 
         // Finally, make it easier to construct merkle paths to this new
         // note
-        let witness =
-            IncrementalWitness::<Node>::from_tree(&commitment_tree.get_tree());
+        let witness = IncrementalWitness::<Node>::from_tree(&commitment_tree.get_tree());
         witness_map.insert(note_pos, witness);
-        note_pos += 1;
     }
 
     Ok(())
@@ -55,8 +54,9 @@ pub fn query_witness_map_anchor_existence(
 ) -> anyhow::Result<()> {
     let witness_map_roots = witness_map.roots(roots_to_check);
 
-    if !witness_map_roots.into_par_iter().all(
-        |(note_index, witness_map_root)| {
+    if !witness_map_roots
+        .into_par_iter()
+        .all(|(note_index, witness_map_root)| {
             if witness_map_root == cmt_tree_root {
                 true
             } else {
@@ -68,8 +68,8 @@ pub fn query_witness_map_anchor_existence(
                 );
                 false
             }
-        },
-    ) {
+        })
+    {
         anyhow::bail!("There is an invalid anchor in the witness map");
     }
 

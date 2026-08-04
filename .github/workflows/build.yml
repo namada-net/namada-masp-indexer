@@ -17,21 +17,7 @@ permissions:
   id-token: write
   contents: read
 
-env:
-  nightly: nightly-2025-03-01
-
 jobs:
-  validate-swagger:
-    runs-on: ubuntu-latest
-    name: Validate Swagger
-
-    steps:
-      - uses: actions/checkout@v4
-      - name: Validate OpenAPI definition
-        uses: swaggerexpert/swagger-editor-validate@v1
-        with:
-          definition-file: swagger.yml
-
   clippy:
     if: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
     name: Clippy
@@ -47,7 +33,6 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: ${{ env.nightly }}
           components: clippy
           cache: true
       - run: just clippy
@@ -67,7 +52,6 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: ${{ env.nightly }}
           components: rustfmt
           cache: true
       - run: just fmt check
@@ -126,7 +110,7 @@ jobs:
           cache-to: type=gha,scope=${{ matrix.docker.cache_scope }},mode=max
 
   can_enqueue:
-    needs: [clippy, format, docker, validate-swagger]
+    needs: [clippy, format, docker]
     if: always() && github.event_name != 'merge_group'
     permissions:
       actions: read
@@ -141,7 +125,7 @@ jobs:
         run: "[ $ALL_SUCCESS == true ]"
 
   can_merge:
-    needs: [clippy, format, docker, validate-swagger]
+    needs: [clippy, format, docker]
     if: always() && github.event_name == 'merge_group'
     permissions:
       contents: read

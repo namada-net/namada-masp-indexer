@@ -41,9 +41,8 @@ pub async fn query_commitment_tree_anchor_existence(
     client: &HttpClient,
     commitment_tree_root: Node,
 ) -> anyhow::Result<()> {
-    let anchor_key = namada_sdk::token::storage_key::masp_commitment_anchor_key(
-        commitment_tree_root,
-    );
+    let anchor_key =
+        namada_sdk::token::storage_key::masp_commitment_anchor_key(commitment_tree_root);
 
     if !namada_sdk::rpc::query_has_storage_key(client, &anchor_key)
         .await

@@ -1,7 +1,5 @@
 use anyhow::Context;
-use diesel::{
-    ExpressionMethods, OptionalExtension, QueryDsl, SelectableHelper,
-};
+use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, SelectableHelper};
 use diesel_async::RunQueryDsl;
 use orm::schema::{notes_index, witness};
 use orm::witness::WitnessDb;
@@ -15,10 +13,7 @@ pub struct WitnessMapRepository {
 
 pub trait WitnessMapRepositoryTrait {
     fn new(app_state: AppState) -> Self;
-    async fn get_witnesses(
-        &self,
-        block_height: i32,
-    ) -> anyhow::Result<(Vec<WitnessDb>, i32)>;
+    async fn get_witnesses(&self, block_height: i32) -> anyhow::Result<(Vec<WitnessDb>, i32)>;
 }
 
 impl WitnessMapRepositoryTrait for WitnessMapRepository {
@@ -26,10 +21,7 @@ impl WitnessMapRepositoryTrait for WitnessMapRepository {
         Self { app_state }
     }
 
-    async fn get_witnesses(
-        &self,
-        block_height: i32,
-    ) -> anyhow::Result<(Vec<WitnessDb>, i32)> {
+    async fn get_witnesses(&self, block_height: i32) -> anyhow::Result<(Vec<WitnessDb>, i32)> {
         let mut conn = self.app_state.get_db_connection().await?;
 
         let Some(closest_height) = notes_index::table

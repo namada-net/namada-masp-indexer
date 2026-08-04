@@ -68,9 +68,7 @@ impl From<namada_tx::IndexedTx> for IndexedTx {
 impl From<namada_tx::event::MaspEventKind> for MaspTxKind {
     fn from(value: namada_tx::event::MaspEventKind) -> Self {
         match value {
-            namada_tx::event::MaspEventKind::FeePayment => {
-                MaspTxKind::FeePayment
-            }
+            namada_tx::event::MaspEventKind::FeePayment => MaspTxKind::FeePayment,
             namada_tx::event::MaspEventKind::Transfer => MaspTxKind::Transfer,
         }
     }

@@ -19,11 +19,8 @@ impl Client {
             .user_agent(user_agent_string())
             .build()
             .expect("Failed to create HTTP client");
-        let http_client = HttpClient::new_from_parts(
-            inner,
-            url,
-            tendermint_rpc::client::CompatMode::V0_37,
-        );
+        let http_client =
+            HttpClient::new_from_parts(inner, url, tendermint_rpc::client::CompatMode::V0_37);
         Client { inner: http_client }
     }
 

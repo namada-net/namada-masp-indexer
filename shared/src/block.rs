@@ -52,8 +52,7 @@ impl Block {
                 Some((tx, idx)) if idx == &tx_index.block_index => tx,
                 _ => {
                     let tx = NamadaTx::try_from_bytes(
-                        raw_block.block.data[tx_index.block_index.0 as usize]
-                            .as_ref(),
+                        raw_block.block.data[tx_index.block_index.0 as usize].as_ref(),
                     )
                     .map_err(|e| e.to_string())?;
                     last_tx = Some((tx, tx_index.block_index));

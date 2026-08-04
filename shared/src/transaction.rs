@@ -24,17 +24,10 @@ impl Transaction {
         let masp_tx = match &valid_masp_tx_ref {
             MaspTxRef::MaspSection(masp_tx_id) => transaction
                 .get_masp_section(masp_tx_id)
-                .ok_or_else(|| {
-                    "Missing expected masp section with id: {id}".to_string()
-                })?
+                .ok_or_else(|| "Missing expected masp section with id: {id}".to_string())?
                 .to_owned(),
-            MaspTxRef::IbcData(sechash) => get_masp_tx_from_ibc_data(
-                transaction,
-                sechash,
-            )
-            .ok_or_else(|| {
-                "Missing expected data section with hash: {sechash}".to_string()
-            })?,
+            MaspTxRef::IbcData(sechash) => get_masp_tx_from_ibc_data(transaction, sechash)
+                .ok_or_else(|| "Missing expected data section with hash: {sechash}".to_string())?,
         };
 
         Ok(Transaction {

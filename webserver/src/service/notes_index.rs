@@ -1,7 +1,5 @@
 use crate::appstate::AppState;
-use crate::repository::notes_index::{
-    NotesIndexRepository, NotesIndexRepositoryTrait,
-};
+use crate::repository::notes_index::{NotesIndexRepository, NotesIndexRepositoryTrait};
 
 #[derive(Clone)]
 pub struct NotesIndexService {

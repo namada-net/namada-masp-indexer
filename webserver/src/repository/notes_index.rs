@@ -13,10 +13,7 @@ pub struct NotesIndexRepository {
 
 pub trait NotesIndexRepositoryTrait {
     fn new(app_state: AppState) -> Self;
-    async fn get_notes_index(
-        &self,
-        block_height: i32,
-    ) -> anyhow::Result<Vec<NotesIndexDb>>;
+    async fn get_notes_index(&self, block_height: i32) -> anyhow::Result<Vec<NotesIndexDb>>;
 }
 
 impl NotesIndexRepositoryTrait for NotesIndexRepository {
@@ -24,10 +21,7 @@ impl NotesIndexRepositoryTrait for NotesIndexRepository {
         Self { app_state }
     }
 
-    async fn get_notes_index(
-        &self,
-        block_height: i32,
-    ) -> anyhow::Result<Vec<NotesIndexDb>> {
+    async fn get_notes_index(&self, block_height: i32) -> anyhow::Result<Vec<NotesIndexDb>> {
         let mut conn = self.app_state.get_db_connection().await?;
 
         let notes = notes_index::table

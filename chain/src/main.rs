@@ -32,13 +32,12 @@ use crate::entity::chain_state::ChainState;
 use crate::entity::commitment_tree::CommitmentTree;
 use crate::entity::tx_notes_index::TxNoteMap;
 use crate::entity::witness_map::WitnessMap;
-use crate::services::{
-    cometbft as cometbft_service, db as db_service, masp as masp_service,
-};
+use crate::services::{cometbft as cometbft_service, db as db_service, masp as masp_service};
 
 const VERSION_STRING: &str = env!("VERGEN_GIT_SHA");
 
 const DEFAULT_INTERVAL: u64 = 5;
+const DEFAULT_TIP_POLL_INTERVAL: u64 = 2;
 const DEFAULT_MAX_CONCURRENT_FETCHES: usize = 100;
 
 const BLOCK_BUFFER_SIZE: usize = 32;
@@ -54,6 +53,7 @@ async fn main_inner() -> Result<(), MainError> {
         cometbft_url,
         database_url,
         interval,
+        tip_poll_interval,
         verbosity,
         starting_block_height,
         number_of_witness_map_roots_to_check,
@@ -82,36 +82,36 @@ async fn main_inner() -> Result<(), MainError> {
             .map(|millis| millis * 1000)
             .unwrap_or(DEFAULT_INTERVAL * 1000),
     );
+    let tip_poll_interval =
+        Duration::from_secs(tip_poll_interval.unwrap_or(DEFAULT_TIP_POLL_INTERVAL));
 
     let mut fetched_blocks = fetch_blocks_and_get_handle(
         last_block_height,
         max_concurrent_fetches,
         retry_interval,
+        tip_poll_interval,
         client.get(),
     );
 
     let mut unprocessed_blocks = UnprocessedBlocks::new(last_block_height);
 
     'outer_loop: while fetched_blocks.get_new_blocks_from_fetcher().await {
-        for block_data in
-            fetched_blocks.order_blocks_to_process(&mut unprocessed_blocks)
-        {
+        for block_data in fetched_blocks.order_blocks_to_process(&mut unprocessed_blocks) {
             // Build and commit MASP data at the block height
-            if let ControlFlow::Break(()) =
-                retry::every(retry_interval, async || {
-                    build_and_commit_masp_data_at_height(
-                        block_data.clone(),
-                        client.as_ref(),
-                        &mut witness_map,
-                        &mut commitment_tree,
-                        &mut tx_notes_index,
-                        &mut shielded_txs,
-                        &app_state,
-                        number_of_witness_map_roots_to_check,
-                    )
-                    .await
-                })
+            if let ControlFlow::Break(()) = retry::every(retry_interval, async || {
+                build_and_commit_masp_data_at_height(
+                    block_data.clone(),
+                    client.as_ref(),
+                    &mut witness_map,
+                    &mut commitment_tree,
+                    &mut tx_notes_index,
+                    &mut shielded_txs,
+                    &app_state,
+                    number_of_witness_map_roots_to_check,
+                )
                 .await
+            })
+            .await
             {
                 break 'outer_loop;
             }
@@ -146,6 +146,7 @@ fn fetch_blocks_and_get_handle(
     last_block_height: Option<BlockHeight>,
     max_concurrent_fetches: usize,
     retry_interval: Duration,
+    tip_poll_interval: Duration,
     client: HttpClient,
 ) -> FetchedBlocks {
     let max_concurrent_fetches = if max_concurrent_fetches <= 1 {
@@ -165,7 +166,7 @@ fn fetch_blocks_and_get_handle(
         let sem = Arc::new(Semaphore::new(max_concurrent_fetches));
 
         while let Some(block_height) = heights_to_process
-            .next_height(&client, retry_interval)
+            .next_height(&client, retry_interval, tip_poll_interval)
             .await
         {
             let permit = sem
@@ -190,12 +191,9 @@ fn fetch_blocks_and_get_handle(
                         );
 
                         let block_data =
-                            cometbft_service::query_masp_txs_in_block(
-                                &client,
-                                block_height,
-                            )
-                            .await
-                            .map_err(CometWrapperError)?;
+                            cometbft_service::query_masp_txs_in_block(&client, block_height)
+                                .await
+                                .map_err(CometWrapperError)?;
 
                         with_time_taken(&mut checkpoint, |time_taken| {
                             tracing::info!(
@@ -243,10 +241,8 @@ async fn run_migrations(app_state: &AppState) -> Result<(), MainError> {
         .parse::<u64>()
         .unwrap_or(5_u64);
     loop {
-        let migration_res = db_service::run_migrations(
-            app_state.get_db_connection().await.into_db_error()?,
-        )
-        .await;
+        let migration_res =
+            db_service::run_migrations(app_state.get_db_connection().await.into_db_error()?).await;
 
         match &migration_res {
             Ok(_) => {
@@ -278,29 +274,26 @@ async fn load_committed_state(
 ) -> Result<(Option<BlockHeight>, CommitmentTree, WitnessMap), MainError> {
     tracing::info!("Loading last committed state from db...");
 
-    let last_block_height = db_service::get_last_synced_block(
-        app_state.get_db_connection().await.into_db_error()?,
-    )
-    .await
-    .into_db_error()?;
+    let last_block_height =
+        db_service::get_last_synced_block(app_state.get_db_connection().await.into_db_error()?)
+            .await
+            .into_db_error()?;
 
     let last_block_height = std::cmp::max(
         last_block_height,
         starting_block_height.map(BlockHeight::from),
     );
 
-    let commitment_tree = db_service::get_last_commitment_tree(
-        app_state.get_db_connection().await.into_db_error()?,
-    )
-    .await
-    .into_db_error()?
-    .unwrap_or_default();
+    let commitment_tree =
+        db_service::get_last_commitment_tree(app_state.get_db_connection().await.into_db_error()?)
+            .await
+            .into_db_error()?
+            .unwrap_or_default();
 
-    let witness_map = db_service::get_last_witness_map(
-        app_state.get_db_connection().await.into_db_error()?,
-    )
-    .await
-    .into_db_error()?;
+    let witness_map =
+        db_service::get_last_witness_map(app_state.get_db_connection().await.into_db_error()?)
+            .await
+            .into_db_error()?;
 
     let commitment_tree_len = commitment_tree.size();
     let witness_map_len = witness_map.size();
@@ -349,9 +342,7 @@ async fn build_and_commit_masp_data_at_height(
         "Attempting to process new masp transactions..."
     );
 
-    for (masp_indexed_tx, Transaction { masp_tx, .. }) in
-        block_data.transactions.into_iter()
-    {
+    for (masp_indexed_tx, Transaction { masp_tx, .. }) in block_data.transactions.into_iter() {
         masp_service::update_witness_map(
             commitment_tree,
             tx_notes_index,
@@ -411,11 +402,9 @@ async fn validate_masp_state(
         let tree_root = tokio::task::block_in_place(|| commitment_tree.root());
 
         let commitment_tree_check_fut = async {
-            cometbft_service::query_commitment_tree_anchor_existence(
-                client, tree_root,
-            )
-            .await
-            .into_rpc_error()
+            cometbft_service::query_commitment_tree_anchor_existence(client, tree_root)
+                .await
+                .into_rpc_error()
         };
 
         // SAFETY: Artificially extend the lifetime of `witness_map`
@@ -423,8 +412,7 @@ async fn validate_masp_state(
         // The reference does not escape its intended scope,
         // therefore the `'static`, in spite of being
         // somewhat sketchy, is safe.
-        let witness_map: &'static WitnessMap =
-            unsafe { std::mem::transmute(witness_map) };
+        let witness_map: &'static WitnessMap = unsafe { std::mem::transmute(witness_map) };
 
         let witness_map_check_fut = async move {
             tokio::task::spawn_blocking(move || {
@@ -474,13 +462,9 @@ impl FetchedBlocks {
                 &mut self.scratch_buffer,
                 BLOCK_BUFFER_SIZE,
             ) {
-                Poll::Ready(0) if exit_handle::must_exit() => {
-                    Poll::Ready(false)
-                }
+                Poll::Ready(0) if exit_handle::must_exit() => Poll::Ready(false),
                 Poll::Ready(0) => {
-                    panic!(
-                        "The block fetching task has unexpectedly terminated"
-                    )
+                    panic!("The block fetching task has unexpectedly terminated")
                 }
                 Poll::Ready(_) => Poll::Ready(true),
                 Poll::Pending => Poll::Pending,
@@ -499,8 +483,7 @@ impl FetchedBlocks {
         }
 
         std::iter::from_fn(|| {
-            while let Some(block_data) = unprocessed_blocks.dequeue_next_block()
-            {
+            while let Some(block_data) = unprocessed_blocks.dequeue_next_block() {
                 // Check if we can skip committing this block for now.
                 // This is because the block is empty. We can make a
                 // single remote procedure call to Postgres, when we

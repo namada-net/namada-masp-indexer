@@ -1,9 +1,7 @@
 use shared::height::BlockHeight;
 
 use crate::appstate::AppState;
-use crate::repository::witness_map::{
-    WitnessMapRepository, WitnessMapRepositoryTrait,
-};
+use crate::repository::witness_map::{WitnessMapRepository, WitnessMapRepositoryTrait};
 
 #[derive(Clone)]
 pub struct WitnessMapService {

@@ -20,21 +20,17 @@ pub struct TxSlot {
 }
 
 impl TxResponse {
-    pub fn new(
-        txs: impl IntoIterator<Item = (Vec<(u64, bool, Vec<u8>)>, u64, u64)>,
-    ) -> Self {
+    pub fn new(txs: impl IntoIterator<Item = (Vec<(u64, bool, Vec<u8>)>, u64, u64)>) -> Self {
         Self {
             txs: txs
                 .into_iter()
                 .map(|(batch, block_height, block_index)| Tx {
                     batch: batch
                         .into_iter()
-                        .map(|(masp_tx_index, is_masp_fee_payment, bytes)| {
-                            TxSlot {
-                                masp_tx_index,
-                                is_masp_fee_payment,
-                                bytes,
-                            }
+                        .map(|(masp_tx_index, is_masp_fee_payment, bytes)| TxSlot {
+                            masp_tx_index,
+                            is_masp_fee_payment,
+                            bytes,
                         })
                         .collect(),
                     block_height,

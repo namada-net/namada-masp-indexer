@@ -22,8 +22,8 @@ pub async fn get_commitment_tree(
             TreeError::Database(err.to_string())
         })?;
 
-    let (commitment_tree, block_height) = maybe_commitment_tree
-        .unwrap_or_else(|| (empty_tree(), query_params.height));
+    let (commitment_tree, block_height) =
+        maybe_commitment_tree.unwrap_or_else(|| (empty_tree(), query_params.height));
 
     Ok(Json(TreeResponse {
         commitment_tree,

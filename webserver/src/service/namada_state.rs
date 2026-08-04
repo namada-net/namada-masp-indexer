@@ -1,9 +1,7 @@
 use shared::height::BlockHeight;
 
 use crate::appstate::AppState;
-use crate::repository::namada_state::{
-    NamadaStateRepository, NamadaStateRepositoryTrait,
-};
+use crate::repository::namada_state::{NamadaStateRepository, NamadaStateRepositoryTrait};
 
 #[derive(Clone)]
 pub struct NamadaStateService {
@@ -17,9 +15,7 @@ impl NamadaStateService {
         }
     }
 
-    pub async fn get_latest_height(
-        &self,
-    ) -> anyhow::Result<Option<BlockHeight>> {
+    pub async fn get_latest_height(&self) -> anyhow::Result<Option<BlockHeight>> {
         self.namada_state_repo.get_latest_height().await
     }
 
@@ -29,9 +25,6 @@ impl NamadaStateService {
         self.namada_state_repo
             .get_block_index()
             .await
-            .map(|option| {
-                option
-                    .map(|(height, filter)| (BlockHeight(height as _), filter))
-            })
+            .map(|option| option.map(|(height, filter)| (BlockHeight(height as _), filter)))
     }
 }

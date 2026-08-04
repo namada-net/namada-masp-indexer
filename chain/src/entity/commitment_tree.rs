@@ -51,10 +51,7 @@ impl CommitmentTree {
     }
 
     #[allow(clippy::wrong_self_convention)]
-    pub fn into_db(
-        &mut self,
-        block_height: BlockHeight,
-    ) -> Option<TreeInsertDb> {
+    pub fn into_db(&mut self, block_height: BlockHeight) -> Option<TreeInsertDb> {
         if !self.transactional.commit() {
             return None;
         }
@@ -69,11 +66,10 @@ impl TryFrom<TreeDb> for CommitmentTree {
     type Error = anyhow::Error;
 
     fn try_from(value: TreeDb) -> Result<Self, Self::Error> {
-        let commitment_tree =
-            MaspCommitmentTree::<Node>::try_from_slice(&value.tree).context(
-                "Failed to deserialize commitment tree from db borsh encoded \
+        let commitment_tree = MaspCommitmentTree::<Node>::try_from_slice(&value.tree).context(
+            "Failed to deserialize commitment tree from db borsh encoded \
                  bytes",
-            )?;
+        )?;
         Ok(Self::new(commitment_tree))
     }
 }

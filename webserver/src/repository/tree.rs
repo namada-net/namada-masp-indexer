@@ -1,7 +1,5 @@
 use anyhow::Context;
-use diesel::{
-    ExpressionMethods, OptionalExtension, QueryDsl, SelectableHelper,
-};
+use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, SelectableHelper};
 use diesel_async::RunQueryDsl;
 use orm::schema::{commitment_tree, notes_index};
 use orm::tree::TreeDb;
@@ -15,10 +13,7 @@ pub struct TreeRepository {
 
 pub trait TreeRepositoryTrait {
     fn new(app_state: AppState) -> Self;
-    async fn get_at_height(
-        &self,
-        block_height: i32,
-    ) -> anyhow::Result<Option<TreeDb>>;
+    async fn get_at_height(&self, block_height: i32) -> anyhow::Result<Option<TreeDb>>;
 }
 
 impl TreeRepositoryTrait for TreeRepository {
@@ -26,10 +21,7 @@ impl TreeRepositoryTrait for TreeRepository {
         Self { app_state }
     }
 
-    async fn get_at_height(
-        &self,
-        block_height: i32,
-    ) -> anyhow::Result<Option<TreeDb>> {
+    async fn get_at_height(&self, block_height: i32) -> anyhow::Result<Option<TreeDb>> {
         let mut conn = self.app_state.get_db_connection().await?;
 
         let Some(closest_height) = notes_index::table

@@ -31,9 +31,8 @@ pub fn locate_masp_txs(
             // the masp event does not follow the expected format
             let data = MaspTxRef::read_from_event_attributes(&event.attributes)
                 .map_err(|e| e.to_string())?;
-            let tx_index =
-                IndexedTx::read_from_event_attributes(&event.attributes)
-                    .map_err(|e| e.to_string())?;
+            let tx_index = IndexedTx::read_from_event_attributes(&event.attributes)
+                .map_err(|e| e.to_string())?;
 
             Ok(Some(MaspEvent {
                 tx_index,
