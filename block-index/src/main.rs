@@ -39,8 +39,7 @@ async fn main() -> Result<(), MainError> {
         interval,
     } = AppConfig::parse();
 
-    let (non_blocking_logger, _worker) =
-        tracing_appender::non_blocking(std::io::stdout());
+    let (non_blocking_logger, _worker) = tracing_appender::non_blocking(std::io::stdout());
     config::install_tracing_subscriber(verbosity, non_blocking_logger);
 
     tracing::info!(version = VERSION_STRING, "Started the block index builder");
@@ -59,10 +58,7 @@ async fn main() -> Result<(), MainError> {
     exit!();
 }
 
-async fn wait_for_migrations<F>(
-    mut exit_handle: F,
-    app_state: &AppState,
-) -> ControlFlow<()>
+async fn wait_for_migrations<F>(mut exit_handle: F, app_state: &AppState) -> ControlFlow<()>
 where
     F: Future<Output = ()> + Unpin,
 {
@@ -121,12 +117,10 @@ fn must_exit() -> impl Future<Output = ()> {
     let task_handle = Arc::clone(&fut_handle);
 
     tokio::spawn(async move {
-        let mut interrupt =
-            signal::unix::signal(signal::unix::SignalKind::interrupt())
-                .expect("Failed to install INT signal handler");
-        let mut term =
-            signal::unix::signal(signal::unix::SignalKind::terminate())
-                .expect("Failed to install TERM signal handler");
+        let mut interrupt = signal::unix::signal(signal::unix::SignalKind::interrupt())
+            .expect("Failed to install INT signal handler");
+        let mut term = signal::unix::signal(signal::unix::SignalKind::terminate())
+            .expect("Failed to install TERM signal handler");
         let mut quit = signal::unix::signal(signal::unix::SignalKind::quit())
             .expect("Failed to install QUIT signal handler");
 
@@ -158,12 +152,9 @@ fn must_exit() -> impl Future<Output = ()> {
 }
 
 async fn run_migrations(app_state: &AppState) -> Result<(), MainError> {
-    use diesel_migrations::{
-        EmbeddedMigrations, MigrationHarness, embed_migrations,
-    };
+    use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 
-    const MIGRATIONS: EmbeddedMigrations =
-        embed_migrations!("../orm/migrations/");
+    const MIGRATIONS: EmbeddedMigrations = embed_migrations!("../orm/migrations/");
 
     async fn run_migrations_inner(conn: Object) -> anyhow::Result<()> {
         tracing::debug!("Running db migrations...");
@@ -218,26 +209,19 @@ async fn build_new_block_index(app_state: &AppState) -> Result<(), MainError> {
                         .distinct()
                         .load_iter::<_, DbDefaultLoadingMode>(conn)
                         .context("Failed to query block heights with masp txs")?
-                        .try_fold(
-                            Vec::new(),
-                            |mut accum, maybe_block_height| {
-                                tracing::debug!(
-                                    "Reading block height entry from db"
-                                );
-                                let height: i32 = maybe_block_height.context(
-                                    "Failed to get tx block height row data \
+                        .try_fold(Vec::new(), |mut accum, maybe_block_height| {
+                            tracing::debug!("Reading block height entry from db");
+                            let height: i32 = maybe_block_height.context(
+                                "Failed to get tx block height row data \
                                      from db",
-                                )?;
-                                tracing::debug!(
-                                    "Read block height entry from db"
-                                );
-                                accum.push(u64::try_from(height).context(
-                                    "Failed to convert block height from i32 \
+                            )?;
+                            tracing::debug!("Read block height entry from db");
+                            accum.push(u64::try_from(height).context(
+                                "Failed to convert block height from i32 \
                                      to u64",
-                                )?);
-                                anyhow::Ok(accum)
-                            },
-                        )
+                            )?);
+                            anyhow::Ok(accum)
+                        })
                 }?;
 
                 anyhow::Ok((last_height, block_heights_with_txs))
@@ -271,15 +255,10 @@ async fn build_new_block_index(app_state: &AppState) -> Result<(), MainError> {
             .into_conversion_error()?;
 
         let serialized = bincode::serialize(&filter)
-            .context(
-                "Failed to serialze binary fuse xor filter of block heights",
-            )
+            .context("Failed to serialze binary fuse xor filter of block heights")
             .into_serialization_error()?;
 
-        tracing::debug!(
-            index_len = filter.len(),
-            "Binary fuse xor filter built"
-        );
+        tracing::debug!(index_len = filter.len(), "Binary fuse xor filter built");
 
         Ok(serialized)
     })?;

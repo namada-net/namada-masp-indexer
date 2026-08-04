@@ -1,5 +1,5 @@
 use anyhow::Context;
-use diesel::dsl::max;
+use diesel::dsl;
 use diesel::{OptionalExtension, QueryDsl, SelectableHelper};
 use diesel_async::RunQueryDsl;
 use orm::block_index::BlockIndex;
@@ -17,9 +17,7 @@ pub struct NamadaStateRepository {
 pub trait NamadaStateRepositoryTrait {
     fn new(app_state: AppState) -> Self;
     async fn get_latest_height(&self) -> anyhow::Result<Option<BlockHeight>>;
-    async fn get_block_index(
-        &self,
-    ) -> anyhow::Result<Option<(i32, BinaryFuse16)>>;
+    async fn get_block_index(&self) -> anyhow::Result<Option<(i32, BinaryFuse16)>>;
 }
 
 impl NamadaStateRepositoryTrait for NamadaStateRepository {
@@ -31,7 +29,7 @@ impl NamadaStateRepositoryTrait for NamadaStateRepository {
         let mut conn = self.app_state.get_db_connection().await?;
 
         let max_height: Option<i32> = chain_state::table
-            .select(max(chain_state::dsl::block_height))
+            .select(dsl::max(chain_state::dsl::block_height))
             .first(&mut conn)
             .await
             .context("Failed to get latest block height from db")?;
@@ -39,9 +37,7 @@ impl NamadaStateRepositoryTrait for NamadaStateRepository {
         Ok(max_height.map(BlockHeight::from))
     }
 
-    async fn get_block_index(
-        &self,
-    ) -> anyhow::Result<Option<(i32, BinaryFuse16)>> {
+    async fn get_block_index(&self) -> anyhow::Result<Option<(i32, BinaryFuse16)>> {
         let mut conn = self.app_state.get_db_connection().await?;
 
         let Some(index) = block_index::table

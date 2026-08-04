@@ -1,4 +1,4 @@
-# Namada Masp Indexer
+# Namada Masp Indexer 
 
 The [`namada-masp-indexer`](https://github.com/namada-net/namada-masp-indexer) is a
 specialized indexer that crawls [Namada](https://github.com/anoma/namada)

@@ -26,9 +26,9 @@ impl AppState {
             .unwrap_or(5);
 
         let pool = tryhard::retry_fn(|| async {
-            let config = AsyncDieselConnectionManager::<
-                diesel_async::AsyncPgConnection,
-            >::new(db_url.clone());
+            let config = AsyncDieselConnectionManager::<diesel_async::AsyncPgConnection>::new(
+                db_url.clone(),
+            );
             Pool::builder(config).max_size(max_pool_size).build()
         })
         .retries(max_conn_retries)
@@ -39,11 +39,10 @@ impl AppState {
         Ok(Self { db: pool })
     }
 
-    pub async fn get_db_connection(
-        &self,
-    ) -> anyhow::Result<Object<AsyncPgConnection>> {
-        self.db.get().await.context(
-            "Failed to get db connection handle from pool of db connections",
-        )
+    pub async fn get_db_connection(&self) -> anyhow::Result<Object<AsyncPgConnection>> {
+        self.db
+            .get()
+            .await
+            .context("Failed to get db connection handle from pool of db connections")
     }
 }

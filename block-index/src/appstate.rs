@@ -26,8 +26,7 @@ impl AppState {
                 db_url.clone(),
                 deadpool_diesel::Runtime::Tokio1,
                 deadpool_diesel::ManagerConfig {
-                    recycling_method:
-                        deadpool_diesel::RecyclingMethod::Verified,
+                    recycling_method: deadpool_diesel::RecyclingMethod::Verified,
                 },
             );
             DbPool::builder(pool_manager)

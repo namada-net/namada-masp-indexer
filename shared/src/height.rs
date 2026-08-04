@@ -30,10 +30,7 @@ impl UnprocessedBlocks {
         }
     }
 
-    pub fn pre_commit_check_if_skip(
-        &mut self,
-        block_to_commit: &Block,
-    ) -> bool {
+    pub fn pre_commit_check_if_skip(&mut self, block_to_commit: &Block) -> bool {
         if block_to_commit.transactions.is_empty() {
             self.empty_block_to_commit = Some(block_to_commit.header.height);
             true
@@ -53,8 +50,7 @@ impl UnprocessedBlocks {
     }
 
     pub fn dequeue_next_block(&mut self) -> Option<Block> {
-        let can_process_buffer_head =
-            *self.buffer.first_entry()?.key() == self.next_height;
+        let can_process_buffer_head = *self.buffer.first_entry()?.key() == self.next_height;
 
         if can_process_buffer_head {
             self.increment_next_height();
@@ -65,8 +61,7 @@ impl UnprocessedBlocks {
     }
 
     fn increment_next_height(&mut self) {
-        self.next_height =
-            self.next_height.next().expect("Block height overflow");
+        self.next_height = self.next_height.next().expect("Block height overflow");
     }
 }
 
@@ -92,37 +87,57 @@ impl FollowingHeights {
         &mut self,
         http_client: &HttpClient,
         fetch_retry_interval: Duration,
+        tip_poll_interval: Duration,
     ) -> Option<BlockHeight> {
-        let next_height =
-            self.iter_height.next().expect("Block height overflow");
+        let next_height = self.iter_height.next().expect("Block height overflow");
         self.iter_height = next_height;
 
         // NB: the next height might not have been committed
         // yet, and we must block
         while next_height > self.last_committed_height {
-            // NB: the compiler likes to complain like a little
-            // bitch if we don't clone the http client
-            let http_client = http_client.clone();
-
-            let ControlFlow::Continue(block) =
-                retry::every(fetch_retry_interval, async move || {
-                    http_client.latest_block().await.context(
-                        "Failed to query Namada's last committed block",
-                    )
-                })
-                .await
-            else {
-                return None;
-            };
-
             self.last_committed_height =
-                BlockHeight(block.block.header.height.value());
+                query_last_committed_height(http_client, fetch_retry_interval).await?;
+
+            // NB: we have caught up with the chain tip, so back off before
+            // polling again, lest we spin on the CometBFT node
+            if next_height > self.last_committed_height {
+                retry::sleep_with_jitter(tip_poll_interval).await;
+            }
         }
 
         debug_assert!(self.iter_height <= self.last_committed_height);
 
         Some(next_height)
     }
+}
+
+/// Query the height of the last block committed to the chain.
+///
+/// Returns [`None`] if the process must exit.
+async fn query_last_committed_height(
+    http_client: &HttpClient,
+    retry_interval: Duration,
+) -> Option<BlockHeight> {
+    // NB: `/status` is queried instead of `/block`, since all we need is
+    // the height of the last committed block; `/block` would ship us the
+    // entire block, transactions included
+    //
+    // NB: the compiler likes to complain like a little bitch if we don't
+    // clone the http client
+    let http_client = http_client.clone();
+
+    let ControlFlow::Continue(status) = retry::every(retry_interval, async move || {
+        http_client
+            .status()
+            .await
+            .context("Failed to query Namada's last committed block height")
+    })
+    .await
+    else {
+        return None;
+    };
+
+    Some(BlockHeight(status.sync_info.latest_block_height.value()))
 }
 
 #[derive(Default, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]

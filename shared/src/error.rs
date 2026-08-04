@@ -1,8 +1,6 @@
 use std::fmt;
 
-use tendermint_rpc::error::{
-    Error as TendermintRpcError, ErrorDetail as TendermintRpcErrorDetail,
-};
+use tendermint_rpc::error::{Error as TendermintRpcError, ErrorDetail as TendermintRpcErrorDetail};
 use tendermint_rpc::response_error::Code as TendermintRpcCode;
 
 /// Override the log level of errors.
@@ -29,9 +27,10 @@ impl SilenceLog for CometWrapperError {
                 return false;
             }
 
-            return resp.source.data().is_some_and(|msg| {
-                msg.contains("could not find results for height")
-            });
+            return resp
+                .source
+                .data()
+                .is_some_and(|msg| msg.contains("could not find results for height"));
         }
 
         // By default, never silence error logs

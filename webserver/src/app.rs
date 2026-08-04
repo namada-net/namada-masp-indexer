@@ -56,14 +56,8 @@ impl ApplicationServer {
                 )
                 .route("/tx", get(cache_forever(handler::tx::get_tx)))
                 .route("/height", get(handler::namada_state::get_latest_height))
-                .route(
-                    "/block-index",
-                    get(handler::namada_state::get_block_index),
-                )
-                .route(
-                    "/metrics",
-                    get(|| async move { metric_handler.render() }),
-                )
+                .route("/block-index", get(handler::namada_state::get_block_index))
+                .route("/metrics", get(|| async move { metric_handler.render() }))
                 .with_state(common_state)
         };
 
@@ -106,9 +100,7 @@ impl ApplicationServer {
     }
 
     /// Adds a custom handler for tower's `TimeoutLayer`, see https://docs.rs/axum/latest/axum/middleware/index.html#commonly-used-middleware.
-    async fn handle_timeout_error(
-        err: BoxError,
-    ) -> (StatusCode, Json<serde_json::Value>) {
+    async fn handle_timeout_error(err: BoxError) -> (StatusCode, Json<serde_json::Value>) {
         if err.is::<tower::timeout::error::Elapsed>() {
             (
                 StatusCode::REQUEST_TIMEOUT,

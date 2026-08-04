@@ -1,7 +1,5 @@
 use anyhow::Context;
-use diesel::{
-    ExpressionMethods, OptionalExtension, QueryDsl, SelectableHelper,
-};
+use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, SelectableHelper};
 use diesel_async::RunQueryDsl;
 use orm::schema::{chain_state, tx};
 use orm::tx::TxDb;
@@ -39,9 +37,7 @@ impl TxRepositoryTrait for TxRepository {
             .get_result(&mut conn)
             .await
             .optional()
-            .with_context(|| {
-                "Failed to get the latest block height from the database"
-            })?
+            .with_context(|| "Failed to get the latest block height from the database")?
             .unwrap_or_default();
 
         if latest_block_height < to_block_height {
@@ -53,10 +49,7 @@ impl TxRepositoryTrait for TxRepository {
         }
 
         let transactions = tx::table
-            .filter(
-                tx::dsl::block_height
-                    .between(from_block_height, to_block_height),
-            )
+            .filter(tx::dsl::block_height.between(from_block_height, to_block_height))
             .order_by((
                 tx::dsl::block_height.asc(),
                 tx::dsl::block_index.asc(),

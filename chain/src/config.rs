@@ -13,6 +13,11 @@ pub struct AppConfig {
     #[clap(long, env)]
     pub interval: Option<u64>,
 
+    /// How often, in seconds, to poll CometBFT for a new chain tip,
+    /// while the indexer is fully synced.
+    #[clap(long, env)]
+    pub tip_poll_interval: Option<u64>,
+
     #[clap(long, env)]
     pub starting_block_height: Option<u64>,
 
@@ -36,8 +41,7 @@ pub fn install_tracing_subscriber(verbosity: Verbosity<InfoLevel>) {
         LevelFilter::Trace => Some(Level::TRACE),
     };
     if let Some(log_level) = log_level {
-        let subscriber =
-            FmtSubscriber::builder().with_max_level(log_level).finish();
+        let subscriber = FmtSubscriber::builder().with_max_level(log_level).finish();
         tracing::subscriber::set_global_default(subscriber).unwrap();
     }
 }

@@ -14,9 +14,7 @@ pub struct WitnessMap {
 }
 
 impl WitnessMap {
-    pub const fn new(
-        witness_map: HashMap<usize, IncrementalWitness<Node>>,
-    ) -> Self {
+    pub const fn new(witness_map: HashMap<usize, IncrementalWitness<Node>>) -> Self {
         Self {
             transactional: Transactional::new(witness_map),
         }
@@ -44,24 +42,15 @@ impl WitnessMap {
             .as_mut()
             .iter_mut()
             .par_bridge()
-            .try_for_each(|(note_pos, witness)| {
-                witness.append(node).map_err(|()| *note_pos)
-            })
+            .try_for_each(|(note_pos, witness)| witness.append(node).map_err(|()| *note_pos))
     }
 
-    pub fn insert(
-        &mut self,
-        note_pos: usize,
-        witness: IncrementalWitness<Node>,
-    ) {
+    pub fn insert(&mut self, note_pos: usize, witness: IncrementalWitness<Node>) {
         self.transactional.as_mut().insert(note_pos, witness);
     }
 
     #[allow(clippy::wrong_self_convention)]
-    pub fn into_db(
-        &mut self,
-        block_height: BlockHeight,
-    ) -> Option<Vec<WitnessInsertDb>> {
+    pub fn into_db(&mut self, block_height: BlockHeight) -> Option<Vec<WitnessInsertDb>> {
         if !self.transactional.commit() {
             return None;
         }

@@ -14,10 +14,7 @@ pub struct Witness {
 }
 
 impl WitnessMapResponse {
-    pub fn new(
-        block_height: BlockHeight,
-        witnesses: Vec<(Vec<u8>, u64)>,
-    ) -> Self {
+    pub fn new(block_height: BlockHeight, witnesses: Vec<(Vec<u8>, u64)>) -> Self {
         Self {
             witnesses: witnesses
                 .into_iter()
