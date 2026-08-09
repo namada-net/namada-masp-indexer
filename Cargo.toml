@@ -24,9 +24,9 @@ diesel-async = { version = "0.7.3", features = ["postgres", "tokio", "deadpool"]
 futures = "0.3.30"
 itertools = "0.13.0"
 lazy_static = "1.4.0"
-namada_core = "0.149.1"
-namada_sdk = { version = "0.149.1", default-features = false, features = ["std", "async-send", "download-params"] }
-namada_tx = "0.149.1"
+namada_core = "0.150.2"
+namada_sdk = { version = "0.150.2", default-features = false, features = ["std", "async-send", "download-params"] }
+namada_tx = "0.150.2"
 orm = { path = "orm" }
 rand = "0.9.1"
 rayon = "1.10.0"
